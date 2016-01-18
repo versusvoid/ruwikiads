@@ -1,0 +1,8 @@
+__pycache__
+*.pyc
+*.zip
+*.tgz
+*.tar.*
+*.bz2
+.*.sw*
+*.xml

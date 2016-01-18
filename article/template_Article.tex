@@ -1,0 +1,52 @@
+\documentclass[]{article}
+
+\usepackage{fullpage}
+%\usepackage{amsmath}
+\usepackage{natbib}
+\usepackage[russian]{babel}
+\usepackage[utf8]{inputenc}
+
+%opening
+\title{Advertisement detection in Russian Wikipedia}
+\author{versusvoid}
+
+\begin{document}
+
+\maketitle
+
+\begin{abstract}
+
+TODO
+
+\end{abstract}
+
+\section{Introduction}
+
+Wikipedia is well known for it's attempt to be a neutral source of knowledge. 
+Neutrality is achieved by collaborative editing with contributions from users 
+holding different opinions. Yet there are many articles (or sections in big 
+articles) edited by couple of users at most and not receiving much attention 
+form others. Sometimes, whether by intent or by affect, these give impression 
+of advertisement - silencing negative aspects and exaggerating positive. 
+Automatic detection and correction suggestions will speedup improvement of
+articles quality.
+
+\section{Related works}
+
+There are no known results for Russian Wikipedia, but this field is well 
+explored both in English-only and general language setting.
+
+
+In \citealp{bhosale:emnlp13} LogitBoost classifier was used on obvious 
+stylometric along with usual n-gram and PCFG features, giving F1 score of 0.93.
+
+In \citealp{deep-learning-vectors} authors explored usage of vector models and
+achieved 0.96 F1 score, but used synthetic data as input.
+
+\section*{References}
+
+
+\bibliographystyle{authordate1}
+\bibliography{bibliography}
+
+\end{document}
