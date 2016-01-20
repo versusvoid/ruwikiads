@@ -47,15 +47,6 @@ def get_url_and_annotation(data):
     return str_url, annotation, data[j2 + 7:]
 
 
-def output_extracted_content(f, extracted_content, url):
-    wait_log('extracted:', extracted_content, sep='\n'); 
-    if not re.search(sentence_regexp, extracted_content, re.MULTILINE):
-        print(url.geturl(), '\n', extracted_content, '\n===========================\n')
-        #input()
-    print(url.geturl(), '\n', file=f)
-    print(extracted_content, file=f)
-    print('---------===============---------===============---------', file=f)
-
 with open('ads.txt', 'w') as f:
     for start in range(0, NUM*100, NUM):
         print(start, file=sys.stderr)

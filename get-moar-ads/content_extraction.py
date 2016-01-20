@@ -5,6 +5,7 @@ import re
 import sys
 import codecs
 import requests
+import requests.exceptions
 import urllib.parse
 
 def wrong_encoding(encoding):
@@ -62,9 +63,15 @@ def extract_content(response):
 
 
 def get_company_page(url):
+    encoding_problem = False
     for i in range(3):
         try:
-            return requests.get(url, verify=False)
+            if encoding_problem:
+                return requests.get(url, verify=False, headers={'Accept-Encoding': 'None'})
+            else:
+                return requests.get(url, verify=False)
+        except requests.exceptions.ContentDecodingError:
+            encoding_problem = True
         except:
             pass
     return None
@@ -79,9 +86,14 @@ def same_top_domain(domain1, domain2):
 
 def compute_child_url(url, child_str_url):
     child_url = urllib.parse.urlparse(child_str_url)
-    if ((child_url.scheme != '' and child_url.scheme.casefold() != url.scheme.casefold()) or 
-        (child_url.netloc != '' and not same_top_domain(child_url.netloc, url.netloc))):
+    if child_url.scheme != '' and child_url.scheme.casefold() != url.scheme.casefold():
         return None
+
+    new_domain = url.netloc
+    if child_url.netloc != '':
+        if not same_top_domain(child_url.netloc, url.netloc):
+            return None
+        new_domain = child_url.netloc
     
     new_path = ''
     if child_url.path.startswith('/'):
@@ -97,7 +109,8 @@ def compute_child_url(url, child_str_url):
     if len(new_path) == 0:
         new_path = '/'
 
-    return urllib.parse.ParseResult(url.scheme, url.netloc, new_path, child_url.params, child_url.query, '')
+
+    return urllib.parse.ParseResult(url.scheme, new_domain, new_path, child_url.params, child_url.query, '')
 
 
 def extract_from_child_page(url, content):
@@ -129,3 +142,16 @@ def extract_from_about_page(str_url):
 
 
     return extract_from_about_page_response(r)
+
+
+def output_extracted_content(f, extracted_content, url):
+    wait_log('extracted:', extracted_content, sep='\n'); 
+    if not re.search(sentence_regexp, extracted_content, re.MULTILINE):
+        #wait_log(url.geturl(), '\n', extracted_content, '\n===========================\n')
+        wait_log('no sentences')
+        #input()
+    print(url.geturl(), '\n', file=f)
+    print(extracted_content, file=f)
+    print('---------===============---------===============---------', file=f)
+
+

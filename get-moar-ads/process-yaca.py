@@ -2,6 +2,7 @@
 
 from content_extraction import *
 from logs import *
+import sys
 import re
 import html.parser
 import urllib.parse
@@ -55,6 +56,7 @@ def extract_about_url(response):
 
 def is_about_link(p):
     return (re.search('\\babout\\b', p[0]) != None or
+            re.search('\\bcompany\\b', p[0]) != None or
             'о компании'.casefold() in p[1].casefold() or
             'о нас'.casefold() in p[1].casefold() or
             re.search('\\bОб?[  ]', p[1]) != None)
@@ -63,69 +65,87 @@ urls = []
 #with open('YaCa_02.2014_business.csv', 'r') as f:
 with open('test-urls.csv', 'r') as f:
     for line in f:
-        url = line.strip().split(',', 1)[0]
-        urls.append(url)
+        url = urllib.parse.urlparse(line.strip().split(',', 1)[0])
+        assert url.scheme.startswith('http') 
+        #urls.add('{}://{}/'.format(url.scheme, url.netloc))
+        urls.append('{}://{}/'.format(url.scheme, url.netloc))
 
-for str_url in urls:
-    log(str_url, '\n')
-    url = urllib.parse.urlparse(str_url)
-    r = get_company_page(str_url)
-    if r is None: continue
+rus = ['ru'.casefold(), 'rus'.casefold(), 'рус'.casefold(), 'russian'.casefold()]
 
-    log(r.text.count('/about'))
-    log(r.text.find('О компании'))
+with open('yaca-ads.txt', 'w') as f:
+    i = 0
+    for str_url in urls:
+        log('\n-------------------------------\n')
+        log(str_url, '\n')
 
-    content = decode_content(r)
-    parser = HTMLLinksExtractor()
-    parser.feed(content)
+        url = urllib.parse.urlparse(str_url)
+        r = get_company_page(str_url)
+        if r is None: 
+            log("Can't get site index page")
+            continue
 
-    for str_new_url, text in parser.links:
-        if text.strip().casefold() == 'ru'.casefold():
-            new_url = compute_child_url(url, str_new_url)
-            if new_url == url: break
+        content = decode_content(r)
+        parser = HTMLLinksExtractor()
+        parser.feed(content)
 
-            wait_log('Switching from', url.geturl(), 'to russian url:', new_url.geturl())
-            r = get_company_page(url.geturl())
-            if r == None: break
-            content = decode_content(r)
-            parser = HTMLLinksExtractor()
-            parser.feed(content)
-            break
+        for str_new_url, text in parser.links:
+            if text.strip().casefold() in rus:
+                new_url = compute_child_url(url, str_new_url)
+                if new_url == url: break
 
-    if r is None: continue
+                wait_log('Switching from', url.geturl(), 'to russian url:', new_url.geturl())
+                r = get_company_page(url.geturl())
+                if r == None: break
+                content = decode_content(r)
+                parser = HTMLLinksExtractor()
+                parser.feed(content)
+                break
 
-    links = list(filter(is_about_link, parser.links))
-    about_links_num = len(links)
-    for i, p in enumerate(links):
-        score = 0
-        if re.search('\\babout\\b', p[0]) != None:
-            score += about_links_num - i
+        if r is None: continue
 
-        if 'о компании'.casefold() in p[1].casefold() or 'о фирме'.casefold() in p[1].casefold():
-            score += 1000
-        elif 'о нас'.casefold() in p[1].casefold():
-            score += 500
-        elif re.search('\\bОб?[  ]', p[1]) != None:
-            score += 250
+        links = list(filter(is_about_link, parser.links))
+        about_links_num = len(links)
+        for i, p in enumerate(links):
+            score = 0
+            if re.search('\\babout\\b', p[0]) != None:
+                score += about_links_num - i
+            elif re.search('\\bcompany\\b', p[0]) != None:
+                score += (about_links_num - i)/2
 
-        links[i] = (score, p[0], p[1])
+            caseless_text = p[1].casefold()
 
-    extracted_content = None
-    for score, href, text in sorted(links, reverse=True):
-        log('Trying link "{}" -> {} with score {}'.format(text, href, score))
+            if 'о компании'.casefold() == caseless_text or 'о фирме'.casefold() == caseless_text:
+                score += 1500
+            if 'о компании'.casefold() in caseless_text or 'о фирме'.casefold() in caseless_text:
+                score += 1000
+            elif 'о нас'.casefold() == caseless_text:
+                score += 750
+            elif 'о нас'.casefold() in caseless_text:
+                score += 500
+            elif re.search('\\bОб?[  ]', p[1]) != None:
+                score += 250
 
-        new_url = compute_child_url(url, href)
-        if new_url == url: 
-            log('The same page')
-            extracted_content = extract_from_about_page_response(r)
-        else:
-            extracted_content = extract_from_about_page(new_url.geturl())
-       
-        if extracted_content != None: 
-            wait_log('Extracted content:\n', extracted_content)
-            break
+            links[i] = (score, p[0], p[1])
 
-        wait_log()
+        for score, href, text in sorted(links, reverse=True):
+            log('Trying link "{}" -> {} with score {}'.format(text, href, score))
 
-    log('\n-------------------------------\n')
+            new_url = compute_child_url(url, href)
+            extracted_content = None
+            if new_url == url: 
+                log('The same page')
+                extracted_content = extract_from_about_page_response(r)
+            else:
+                extracted_content = extract_from_about_page(new_url.geturl())
+           
+            if extracted_content != None: 
+                output_extracted_content(f, extracted_content, new_url)
+                break
+
+            wait_log()
+
+        
+        i += 1
+        if i % 100 == 0:
+            print(i, file=sys.stderr)
 
