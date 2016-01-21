@@ -67,9 +67,9 @@ def get_company_page(url):
     for i in range(3):
         try:
             if encoding_problem:
-                return requests.get(url, verify=False, headers={'Accept-Encoding': 'None'})
+                return requests.get(url, verify=False, headers={'Accept-Encoding': 'None'}, timeout=3)
             else:
-                return requests.get(url, verify=False)
+                return requests.get(url, verify=False, timeout=3)
         except requests.exceptions.ContentDecodingError:
             encoding_problem = True
         except:

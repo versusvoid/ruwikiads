@@ -5,7 +5,6 @@ import html
 import html.parser
 import enum
 
-#word_regexp = '["(«]?[А-ЯЁA-Z]?[a-zа-яё]*([֊־‐‑‒–—―﹣－-]
 all_upper_first_word_ru_regexp = re.compile('["(«]?[А-ЯЁ]{2,5}[")»,;]?')
 all_upper_first_word_en_regexp = re.compile('["(«]?[A-Z]{2,5}[")»,;]?')
 sentence_first_word_ru_regexp = re.compile('["(«]?[А-ЯЁ][а-яё]*([֊־‐‑‒–—―﹣－-][А-ЯЁ]?[а-яё]+)?[")»,;]?')
@@ -22,10 +21,12 @@ class SentenceDetectionState(enum.Enum):
     Unknown = 2
     MiddleSentence = 3
 
-def is_sentence_present(text):
+def count_sentences(text):
     tokens = re.split('[  \t]+', text)
+    #print(tokens)
     detection_state = SentenceDetectionState.BeforeFirstWord
     sentence_length = 0
+    num_sentences = 0
     for i, token in enumerate(tokens):
         if detection_state == SentenceDetectionState.BeforeFirstWord:
             if (sentence_first_word_ru_regexp.fullmatch(token) != None or
@@ -45,14 +46,15 @@ def is_sentence_present(text):
                     all_upper_middle_word_en_regexp.fullmatch(token) != None):
                 if token[-1] in '.!?':
                     #print('Sentence:', ' '.join(tokens[i - sentence_length:i + 1]))
-                    return sentence_length + 1 > 4
+                    if sentence_length + 1 > 4:
+                        num_sentences += 1
+                    detection_state = SentenceDetectionState.BeforeFirstWord
 
                 sentence_length += 1
             elif (standalone_punctuation_regexp.fullmatch(token) or
                     standalone_number_regexp.fullmatch(token)):
                 sentence_length += 1
             else:
-                sentence_length = 0
                 detection_state = SentenceDetectionState.Unknown
 
         if detection_state == SentenceDetectionState.Unknown:
@@ -60,6 +62,9 @@ def is_sentence_present(text):
                     (middle_word_ru_regexp.fullmatch(token) or middle_word_en_regexp.fullmatch(token)) 
                         and token[-1] in '.!?')):
                 detection_state = SentenceDetectionState.BeforeFirstWord
+
+
+    return num_sentences
 
 
 sentence_regexp = '([.!?][  ]|^[  \t]*|<p>[  \t]*)[А-ЯЁ][А-ЯЁа-яё,"«»()  ֊־‐‑‒–—―﹣－-]+[:.!?]'
@@ -72,7 +77,9 @@ class MyHTMLParser(html.parser.HTMLParser):
     def __init__(self):
         html.parser.HTMLParser.__init__(self)
         self._texts_stack = []
+        self._paragraph_sentence_text_num_sentences = 1
         self._paragraph_sentence_text = ''
+        self._sentence_text_num_sentences = 1
         self._sentence_text = ''
         self._paragraph_text = ''
 
@@ -81,37 +88,56 @@ class MyHTMLParser(html.parser.HTMLParser):
 
     def handle_endtag(self, tag):
         if len(self._texts_stack) == 0: return
-        content = re.sub('\n+', '\n', ''.join(self._texts_stack[-1]), flags=re.MULTILINE)
+        content = re.sub('\n+', ' \n ', ''.join(self._texts_stack[-1]), flags=re.MULTILINE)
         self._texts_stack.pop()
 
         if len(content.strip()) == 0 or re.search('\\b404\\b', content) != None: 
             return
-        #print('trying:\n', content, '\n----\n')
+        if len(re.findall('[a-z]', content, flags=re.IGNORECASE)) > len(re.findall('[а-яё]', content, flags=re.IGNORECASE)):
+            return
+        #print('trying (', len(content), '):\n', content, '\n----\n')
 
         paragraph = '<p>' in content
         m = re.search(sentence_regexp, content, re.MULTILINE)
-        sentence = is_sentence_present(content)
+        num_sentences = count_sentences(content)
         #sentence = m != None and re.search('\s', m.group(0)) != None
         #sentence = max(map(lambda s: len(s.strip()), content.split('\n'))) >= 70 and re.search(sentence_regexp, content, re.MULTILINE) != None
 
-        if paragraph and sentence and len(content) > len(self._paragraph_sentence_text):
-            self._paragraph_sentence_text = self.copyleft(self._paragraph_sentence_text, content)
+        if paragraph and num_sentences > self._paragraph_sentence_text_num_sentences: 
+            assert len(self._paragraph_sentence_text) / len(content) < 2.0
+            change = self.copyleft(self._paragraph_sentence_text, content)
+            if change:
+                self._paragraph_sentence_text = content
+                self._paragraph_sentence_text_num_sentences = num_sentences
 
-        if sentence and len(content) > len(self._sentence_text):
+        if num_sentences > self._sentence_text_num_sentences: 
+            assert len(self._sentence_text) / len(content) < 2.0
             #print('Sentence present')
-            self._sentence_text = self.copyleft(self._sentence_text, content)
+            change = self.copyleft(self._sentence_text, content)
+            if change:
+                self._sentence_text = content
+                self._sentence_text_num_sentences = num_sentences
 
         if paragraph and len(content) > len(self._paragraph_text):
-            self._paragraph_text = self.copyleft(self._paragraph_text, content)
+            self._paragraph_text = content if self.copyleft(self._paragraph_text, content) else self._paragraph_text
 
 
         
 
     def copyleft(self, old_text, new_text):
-        if '©' in new_text and len(old_text) != 0:
+        if len(old_text) == 0: return True
+
+        if '©' in new_text:
+            return False
+
+        '''
+        if ('компани'.casefold() in old_text.casefold() and
+                'компани'.casefold() not in new_text.casefold() and
+                len(new_text)/len(old_text) < 1.5):
             return old_text
-        else:
-            return new_text
+        '''
+
+        return True
             
         
     def handle_data(self, data):
@@ -154,8 +180,8 @@ def extract_main_content(content):
     #print(content)
 
     content = re.sub('<(br|dt|dd)[^>]*>', '\n', content, flags=re.IGNORECASE)
-    content = re.sub('</?(b|a|ul|ol|li|i|font|dt|dl|dd|big|header|h[1-6]|em|strong|blockquote|span)[^>]*>', '', content, flags=re.IGNORECASE)
-    content = content.replace('</p>', '\n')
+    content = re.sub('</?(b|u|a|ul|ol|li|i|font|dt|dl|dd|big|header|h[1-6]|em|strong|blockquote|span|wbr)[^>]*>', '', content, flags=re.IGNORECASE)
+    content = re.sub('</p>', '\n', content, flags=re.IGNORECASE)
     content = re.sub('<p( [^>]+)?>', ' &lt;p&gt; ', content, flags=re.IGNORECASE)
     #content = re.sub('<p[^>]*>', '', content)
 
@@ -164,9 +190,9 @@ def extract_main_content(content):
     parser = MyHTMLParser()
     parser.feed(content)
 
-    longest_text = re.sub('[ \t]+', ' ', parser.get_longest_text())
+    longest_text = parser.get_longest_text().replace('<p>', '\n')
+    longest_text = re.sub('[ \t]+', ' ', longest_text)
     longest_text = re.sub('\s{2,}', '\n', longest_text)
-    longest_text = longest_text.replace('<p>', '')
 
     return longest_text
 
