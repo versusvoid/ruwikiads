@@ -3,78 +3,46 @@ from logs import *
 from html_filtering import *
 import re
 import sys
-import codecs
-import requests
-import requests.exceptions
 import urllib.parse
+from time import time, sleep
+from selenium import webdriver
+from selenium.common.exceptions import TimeoutException
+from selenium.webdriver.support.wait import WebDriverWait
 
-def wrong_encoding(encoding):
+def extract_content(driver):
+    content = extract_main_content(driver)
+
+    if len(content) >= 200:
+        return content
+    else:
+        return None
+
+class PageLoadException(Exception):
+    pass
+
+def get_company_page(driver, url):
+    old_url = driver.current_url
+    if url == old_url: return
+
     try:
-        codecs.lookup(encoding)
-        return False
-    except:
-        return True
-
-def decode_content(response):
-    content_type_key = None
-    for k in response.headers.keys():
-        if k.casefold() == 'Content-Type'.casefold():
-            content_type_key = k
-            break
-    if content_type_key == None or 'charset=' not in response.headers[content_type_key] or wrong_encoding(response.encoding):
-        
-        #m = re.search('charset=([a-zA-Z0-9-]+)', response.headers[content_type_key])
-        #assert m != None
-        #charset = m.group(1)
-        #text = response.content.decode(charset)
-
-
-#   if text == None:
-        m1 = re.search('<meta[^>]*charset="([a-zA-Z0-9-]+)"', response.text, re.IGNORECASE)
-        m2 = re.search('<meta[^>]*charset=([a-zA-Z0-9-]+)', response.text, re.IGNORECASE)
-        charset = None
-        if m1 != None and m2 != None:
-            assert m1.group(1).casefold() == m2.group(1).casefold(), 'Different charsets "{}" and "{}" at {}"'.format(m1.group(1), m2.group(1), response.url)
-
-        if m1 != None:
-            charset = m1.group(1)
-        elif m2 != None:
-            charset = m2.group(1)
-
-        if charset != None:
-            try:
-                return response.content.decode(charset)
-            except:
-                print("Can't decode with charset", charset, "at", response.url, file=sys.stderr)
-                
-    return response.text
-
-
-def extract_content(response):
-    if response != None and response.status_code == 200:
-        text = decode_content(response)
-
-        content = extract_main_content(text)
-
-        if len(content) >= 200:
-            return content
-
-    return None
-
-
-def get_company_page(url):
-    encoding_problem = False
-    for i in range(3):
-        try:
-            if encoding_problem:
-                return requests.get(url, verify=False, headers={'Accept-Encoding': 'None'}, timeout=3)
-            else:
-                return requests.get(url, verify=False, timeout=3)
-        except requests.exceptions.ContentDecodingError:
-            encoding_problem = True
-        except:
-            pass
-    return None
+        if url.startswith('javascript'):
+            assert not url.startswith('javascript:void(0)')
+            i = url.find(':')
+            if i != -1:
+                log('Executing:', url[i + 1:])
+                log('Current url:', old_url)
+                driver.execute_script(url[i + 1:])
+                sleep(1)
+                log('New url:', driver.current_url)
+        else:
+            #log('Getting:', url)
+            driver.get(url)
+        WebDriverWait(driver, 30).until(lambda d: d.execute_script('return document.readyState === "complete";'))
+    except TimeoutException:
+        raise PageLoadException from TimeoutException
+    #wait_log(driver.page_source)
+    if old_url == driver.current_url:
+        raise PageLoadException(url)
 
 def same_top_domain(domain1, domain2):
     if '.' not in domain1 or '.' not in domain2:
@@ -86,6 +54,7 @@ def same_top_domain(domain1, domain2):
 
 def compute_child_url(url, child_str_url):
     child_url = urllib.parse.urlparse(child_str_url)
+    if child_url.scheme == 'javascript': return child_url
     if child_url.scheme != '' and child_url.scheme.casefold() != url.scheme.casefold():
         return None
 
@@ -109,46 +78,49 @@ def compute_child_url(url, child_str_url):
     if len(new_path) == 0:
         new_path = '/'
 
+    qs = urllib.parse.parse_qs(child_url.query)
+    qs = urllib.parse.urlencode(qs, doseq=True)
 
-    return urllib.parse.ParseResult(url.scheme, new_domain, new_path, child_url.params, child_url.query, '')
+    return urllib.parse.ParseResult(url.scheme, new_domain, urllib.parse.quote(new_path, safe='/%'), child_url.params, qs, '')
 
+js_links_extractor = None
+with open('js/links-extraction.js', 'r') as f:
+    js_links_extractor = ''.join(f)
 
-def extract_from_child_page(url, content):
-    for regexp in map('href="({}[^".?#]+)"'.format, [url.path, url.geturl().replace('.', '\.')]):
-        log('searching for:', regexp)
-        m = re.search(regexp, content)
-        if m:
-            url = compute_child_url(url, m.group(1))
-            log('No text at base url, trying: "{}"'.format(url.geturl()))
-            return extract_content(get_company_page(url.geturl()))
+def get_all_links(driver, stop_on_ru=False, prefixes=None):
+    if prefixes is None:
+        return driver.execute_script(js_links_extractor, stop_on_ru)
+    else:
+        return driver.execute_script(js_links_extractor, stop_on_ru, prefixes)
+
+def extract_from_child_page(driver, url, links):
+    for href in links:
+        new_url = compute_child_url(url, href)
+        if url != new_url:
+            log('No text at base url, trying: "{}"'.format(new_url.geturl()))
+            get_company_page(driver, new_url.geturl())
+            # TODO может не стоит останавливаться на одной возможности?
+            return extract_content(driver)
 
     return None
 
-def extract_from_about_page_response(response):
-    extracted_content = extract_content(response)
+def extract_from_about_page(driver):
+    url = urllib.parse.urlparse(driver.current_url)
+    links = get_all_links(driver, prefixes=[url.path, '{}://{}{}'.format(url.scheme, url.netloc, url.path)])
+    extracted_content = extract_content(driver)
 
-    if response.status_code == 200 and extracted_content == None:
-        url = urllib.parse.urlparse(response.url)
-        extracted_content = extract_from_child_page(url, response.text)
+    if extracted_content == None and url.path != '/':
+        #raise Exception('tmp')
+        extracted_content = extract_from_child_page(driver, url, links)
 
     return extracted_content
 
-
-def extract_from_about_page(str_url):
-    r = get_company_page(str_url)
-    if r == None:
-        print("Can't get page:", str_url, file=sys.stderr)
-        return None
-
-
-    return extract_from_about_page_response(r)
-
-
 def output_extracted_content(f, extracted_content, url):
+    #log('extracted:', extracted_content, sep='\n'); 
     wait_log('extracted:', extracted_content, sep='\n'); 
-    if not re.search(sentence_regexp, extracted_content, re.MULTILINE):
+    #if not re.search(sentence_regexp, extracted_content, re.MULTILINE):
         #wait_log(url.geturl(), '\n', extracted_content, '\n===========================\n')
-        wait_log('no sentences')
+    #    wait_log('no sentences')
         #input()
     print(url.geturl(), '\n', file=f)
     print(extracted_content, file=f)
