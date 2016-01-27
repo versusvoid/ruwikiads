@@ -36,7 +36,7 @@ for(var i = 0; i < elems.length; ++i) {
     if (!elem.hasAttribute('href')) continue;
     var href = elem.getAttribute('href');
 
-    if (href.startsWith('javascript:void(0)')) {
+    if (href.search(/^javascript:\s*void\(\s*0?\s*\)/) !== -1 || href.search(/javascript:\s*;/) !== -1) {
         href = '/';
     }
 
@@ -49,7 +49,8 @@ for(var i = 0; i < elems.length; ++i) {
     }
 
 
-    if (stopOnRu && rus.indexOf(text.trim().toLowerCase()) !== -1) {
+    if (stopOnRu && rus.indexOf(text.trim().toLowerCase()) !== -1 && 
+            (href.startsWith(window.location.origin) || href.startsWith('/'))) {
         return {href: href};
     }
 

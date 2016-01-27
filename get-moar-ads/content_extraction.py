@@ -6,8 +6,29 @@ import sys
 import urllib.parse
 from time import time, sleep
 from selenium import webdriver
-from selenium.common.exceptions import TimeoutException
+from selenium.common.exceptions import TimeoutException, WebDriverException
 from selenium.webdriver.support.wait import WebDriverWait
+
+class DriverHolder(object):
+
+    def __init__(self, driver):
+        self.driver = driver
+
+
+def renew_driver(old_driver=None):
+
+    if old_driver:
+        try:
+            old_driver.driver.quit()
+        except: pass
+
+    new_driver = webdriver.PhantomJS(service_args=['--load-images=false', '--disk-cache=true'])
+    new_driver.set_page_load_timeout(20)
+
+    if old_driver:
+        old_driver.driver = new_driver
+    else:
+        return DriverHolder(new_driver)
 
 def extract_content(driver):
     content = extract_main_content(driver)
@@ -21,27 +42,35 @@ class PageLoadException(Exception):
     pass
 
 def get_company_page(driver, url):
-    old_url = driver.current_url
+    old_url = driver.driver.current_url
     if url == old_url: return
 
     try:
         if url.startswith('javascript'):
-            assert not url.startswith('javascript:void(0)')
+            assert not url.startswith('javascript:void(0)'), url
             i = url.find(':')
             if i != -1:
                 log('Executing:', url[i + 1:])
                 log('Current url:', old_url)
-                driver.execute_script(url[i + 1:])
+                driver.driver.execute_script(url[i + 1:])
                 sleep(1)
-                log('New url:', driver.current_url)
+                log('New url:', driver.driver.current_url)
         else:
             #log('Getting:', url)
-            driver.get(url)
-        WebDriverWait(driver, 30).until(lambda d: d.execute_script('return document.readyState === "complete";'))
-    except TimeoutException:
-        raise PageLoadException from TimeoutException
-    #wait_log(driver.page_source)
-    if old_url == driver.current_url:
+            for i in range(2):
+                try:
+                    driver.driver.get(url)
+                    break
+                except TimeoutException as e:
+                    renew_driver(driver)
+                    if i == 1:
+                        raise
+            #log('Got:', url)
+        WebDriverWait(driver, 30).until(lambda d: d.driver.execute_script('return document.readyState === "complete";'))
+    except (TimeoutException, WebDriverException):
+        raise PageLoadException(url)
+    #wait_log(driver.driver.page_source)
+    if old_url == driver.driver.current_url:
         raise PageLoadException(url)
 
 def same_top_domain(domain1, domain2):
@@ -71,7 +100,7 @@ def compute_child_url(url, child_str_url):
         old_path = url.path
         if len(old_path) == 0:
             old_path = '/'
-        assert '/' in old_path
+        assert '/' in old_path, url
             
         new_path = url.path[url.path.rfind('/') + 1:] + child_url.path
 
@@ -89,15 +118,15 @@ with open('js/links-extraction.js', 'r') as f:
 
 def get_all_links(driver, stop_on_ru=False, prefixes=None):
     if prefixes is None:
-        return driver.execute_script(js_links_extractor, stop_on_ru)
+        return driver.driver.execute_script(js_links_extractor, stop_on_ru)
     else:
-        return driver.execute_script(js_links_extractor, stop_on_ru, prefixes)
+        return driver.driver.execute_script(js_links_extractor, stop_on_ru, prefixes)
 
 def extract_from_child_page(driver, url, links):
     for href in links:
         new_url = compute_child_url(url, href)
         if url != new_url:
-            log('No text at base url, trying: "{}"'.format(new_url.geturl()))
+            log('No text at base url, trying: ', new_url.geturl())
             get_company_page(driver, new_url.geturl())
             # TODO может не стоит останавливаться на одной возможности?
             return extract_content(driver)
@@ -105,7 +134,7 @@ def extract_from_child_page(driver, url, links):
     return None
 
 def extract_from_about_page(driver):
-    url = urllib.parse.urlparse(driver.current_url)
+    url = urllib.parse.urlparse(driver.driver.current_url)
     links = get_all_links(driver, prefixes=[url.path, '{}://{}{}'.format(url.scheme, url.netloc, url.path)])
     extracted_content = extract_content(driver)
 
@@ -124,6 +153,5 @@ def output_extracted_content(f, extracted_content, url):
         #input()
     print(url.geturl(), '\n', file=f)
     print(extracted_content, file=f)
-    print('---------===============---------===============---------', file=f)
 
 

@@ -11,11 +11,11 @@ with open('js/text-extraction.js', 'r') as f:
     js_extractor = ''.join(f)
 
 def extract_text_content(driver):
-    return driver.execute_script(js_extractor)
+    return driver.driver.execute_script(js_extractor)
 
 def remove_all(driver, tag):
-    for elem in driver.find_elements_by_tag_name(tag):
-       driver.execute_script("""
+    for elem in driver.driver.find_elements_by_tag_name(tag):
+       driver.driver.execute_script("""
            var element = arguments[0];
            element.parentNode.removeChild(element);
        """, elem) 
@@ -23,20 +23,20 @@ def remove_all(driver, tag):
 def replace_elements(driver, tag, prefix, suffix):
     script = "arguments[0].outerHTML = ['{}', arguments[0].innerHTML, '{}'].join('');".format(prefix.replace("'", r"\'"), suffix.replace("'", r"\'"))
     try:
-        elem = driver.find_element_by_tag_name(tag)
+        elem = driver.driver.find_element_by_tag_name(tag)
         while True:
             if elem.is_displayed():
-                driver.execute_script(script, elem);
+                driver.driver.execute_script(script, elem);
             else:
-                driver.execute_script("arguments[0].parentNode.removeChild(arguments[0]);", elem);
-            elem = driver.find_element_by_tag_name(tag)
+                driver.driver.execute_script("arguments[0].parentNode.removeChild(arguments[0]);", elem);
+            elem = driver.driver.find_element_by_tag_name(tag)
     except NoSuchElementException:
         pass
 
 def debug(driver):
-    print(driver.page_source)
+    print(driver.driver.page_source)
 
-    for entry in driver.get_log('browser'):
+    for entry in driver.driver.get_log('browser'):
         print(entry['message'][:-4])
 
 def extract_main_content(driver):

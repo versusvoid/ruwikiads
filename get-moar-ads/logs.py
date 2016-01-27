@@ -1,6 +1,6 @@
 
-#logging = True
-logging = False
+logging = True
+#logging = False
 def log(*args, **kwargs):
     if logging:
         print(*args, **kwargs)

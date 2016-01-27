@@ -9,7 +9,10 @@ import re
 import html.parser
 import urllib.parse
 from selenium import webdriver
+from selenium.common.exceptions import WebDriverException
 from time import time
+from urllib.error import URLError
+from http.client import RemoteDisconnected
 
 
 def process_domain(f, driver, str_url):
@@ -21,7 +24,7 @@ def process_domain(f, driver, str_url):
     #end = time()
     #print('Getting took:', end - start)
 
-    url = urllib.parse.urlparse(driver.current_url)
+    url = urllib.parse.urlparse(driver.driver.current_url)
     new_url = url
 
     #print('start')
@@ -35,10 +38,10 @@ def process_domain(f, driver, str_url):
     if type(links) == dict:
         # TODO неплохо бы проверку на домен
         new_url = compute_child_url(url, links['href'])
-        assert new_url is not None
+        assert new_url is not None, str_url
         log('Switching from', url.geturl(), 'to russian url:', new_url.geturl())
         get_company_page(driver, new_url.geturl())
-        url = urllib.parse.urlparse(driver.current_url)
+        url = urllib.parse.urlparse(driver.driver.current_url)
         links = get_all_links(driver)
 
     #wait_log(*links)
@@ -65,9 +68,8 @@ def process_domain(f, driver, str_url):
             try:
                 get_company_page(driver, new_url.geturl())
                 extracted_content = extract_from_about_page(driver)
-            except PageLoadException:
-                traceback.print_exception(*sys.exc_info())
-                log("Can't load", entry['href'])
+            except PageLoadException as e:
+                print("Can't load", e.args[0], file=sys.stderr)
 
         if extracted_content != None: 
             break
@@ -87,56 +89,83 @@ def process_domain(f, driver, str_url):
                 re.search('\\bкомпани([яию])\\b', extracted_content, flags=re.IGNORECASE) is None):
             extracted_content = None
 
-
     if extracted_content != None: 
         output_extracted_content(f, extracted_content, new_url)
+        return True
+    else:
+        return False
 
 
 
 def run(id, urls):
 
     '''
-    chrome_options = webdriver.ChromeOptions()
+    chrome_options = webdriver.driver.ChromeOptions()
     prefs = {"profile.managed_default_content_settings.images": 2}
     chrome_options.add_experimental_option("prefs", prefs)
-    #driver = webdriver.Chrome(chrome_options=chrome_options)
+    #driver = webdriver.driver.Chrome(chrome_options=chrome_options)
     '''
-    driver = webdriver.PhantomJS(service_args=['--load-images=false', '--disk-cache=true'])
-    #driver.set_page_load_timeout(3)
+    driver = renew_driver()
 
     try:
+        '''
+        while True:
+            start = time()
+            driver.driver.get('http://google.com')
+            end = time()
+            print('google took', end - start)
+        '''
+
         with open('data/output/yaca-ads-{}.txt'.format(id), 'w') as f:
             i = 0
             for str_url in urls:
-                assert len(driver.window_handles) < 2
                 i += 1
                 if i % 100 == 0:
-                    print(i, file=sys.stderr)
+                    print('Thread #', id, ': ', i, file=sys.stderr, sep='')
+                    renew_driver(driver)
+                print('Trying', str_url, file=f)
+                f.flush()
 
-                start = time()
+                success = False
                 try:
-                    process_domain(f, driver, str_url)
+                    for i in range(2):
+                        try:
+                            success = process_domain(f, driver, str_url)
+                            break
+                        except (URLError, RemoteDisconnected):
+                            print('Looks like phantom is down at', str_url, file=sys.stderr)
+                            renew_driver(driver)
                 except PageLoadException as e:
                     print("Can't get", e.args[0], file=sys.stderr)
-                end = time()
-                #print('One domain took', end - start)
-                #input()
-    except (Exception, KeyboardInterrupt) as e:
+                except AssertionError as e:
+                    print('Something went very bad at', str_url + ':', file=sys.stderr)
+                    traceback.print_exception(sys.exc_info())
+
+                print('---------===============---------===============---------', file=f)
+                f.flush()
+
+                while len(driver.driver.window_handles) > 1:
+                    print('Closing additional window from', str_url, file=sys.stderr)
+                    driver.driver.switch_to.window(driver.driver.window_handles[1])
+                    driver.driver.close()
+                    driver.driver.switch_to.window(driver.driver.window_handles[0])
+
+    except:
         exc_info = sys.exc_info()
-        for entry in driver.get_log('browser'):
-            print(entry['message'][:-4], file=sys.stderr)
+        print('Unrecoverable error at', str_url, 'in thread #{}:'.format(id), exc_info[0], file=sys.stderr)
         try:
-            driver.quit()
+            for entry in driver.driver.get_log('browser'):
+                print(entry['message'][:-4], file=sys.stderr)
+            driver.driver.quit()
         except: pass
         traceback.print_exception(*exc_info)
-        #print(type(e), e, file=sys.stderr)
+        exit()
 
 
-NUM_THREADS=8
 #urls = []
 urls = set()
-#with open('data/input/YaCa_02.2014_business.csv', 'r') as f:
-with open('data/input/test-urls.csv', 'r') as f:
+with open('data/input/YaCa_02.2014_business.csv', 'r') as f:
+#with open('data/input/test-urls.csv', 'r') as f:
     for line in f:
         url = urllib.parse.urlparse(line.strip().split(',', 1)[0])
         assert url.scheme.startswith('http') 
@@ -145,6 +174,7 @@ with open('data/input/test-urls.csv', 'r') as f:
 if type(urls) != list:
     urls = list(urls)
 
+NUM_THREADS=8
 urls_per_thread = len(urls) // NUM_THREADS
 abundance = len(urls) % NUM_THREADS
 

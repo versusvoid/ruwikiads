@@ -183,10 +183,12 @@ var updateTexts = function (tagName, texts, nonLinkTextPresent) {
     if (paragraph && (numSentences > paragraphSentenceTextNumSentences || 
                       (numSentences === paragraphSentenceTextNumSentences && 
                        text.length > paragraphSentenceText.length))) { 
-        if (paragraphSentenceText.length / text.length >= 2.0 && text.length > 200) {
-            //console.log('Old:\n', sentenceText, '\nNew:\n', text);
-            throw new Error('New paragraphSentenceText two times short');
+        /*
+        if (paragraphSentenceText.length / text.length >= 2.0) {
+            console.error(['New paragraphSentenceText two times short:\nOld (' + paragraphSentenceTextNumSentences.toString() + '):', paragraphSentenceText, 
+                                                                       'New (' + numSentences.toString() + '):', text].join('\n\n'));
         }
+        */
         paragraphSentenceText = text;
         paragraphSentenceTextNumSentences = numSentences;
     }
@@ -194,10 +196,12 @@ var updateTexts = function (tagName, texts, nonLinkTextPresent) {
     if (numSentences > sentenceTextNumSentences || 
             (numSentences === sentenceTextNumSentences && 
              text.length > sentenceText.length)) {
+        /*
         if (sentenceText.length / text.length >= 2.0 && text.length > 200) {
-            //console.log('Old:\n', sentenceText, '\nNew:\n', text);
-            throw new Error('New sentenceText two times short');
+            console.error(['New sentenceText two times short:\nOld (' + sentenceTextNumSentences.toString() + '):', paragraphSentenceText, 
+                                                              'New (' + numSentences.toString() + '):', text].join('\n\n'));
         }
+        */
         sentenceText = text;
         sentenceTextNumSentences = numSentences;
     }
