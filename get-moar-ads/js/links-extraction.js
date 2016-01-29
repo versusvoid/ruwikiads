@@ -1,14 +1,15 @@
 "use strict";
 
-/*
-if (typeof(String.prototype.trim) === "undefined") {
+function isNative(func) {
+    return /^\s*function[^{]+{\s*\[native code\]\s*}\s*$/.test(func);
+}
+if (typeof(String.prototype.trim) === "undefined" || !isNative(String.prototype.trim)) {
 
     String.prototype.trim = function() {
         return String(this).replace(/^\s+|\s+$/g, '');
     };
 
 }
-*/
 
 if (typeof(String.prototype.startsWith) === "undefined") {
 
@@ -18,6 +19,13 @@ if (typeof(String.prototype.startsWith) === "undefined") {
 
 }
 
+if (typeof(Array.prototype.includes) === "undefined") {
+
+    Array.prototype.includes = function (value) {
+        var index = this.indexOf(value);
+        return typeof(index) === 'number' && index !== -1;
+    };
+}
 
 var stopOnRu = arguments.length > 0 ? arguments[0] : false;
 if (stopOnRu.constructor !== Boolean) throw new Error('first argument is not a boolean');
@@ -36,12 +44,12 @@ for(var i = 0; i < elems.length; ++i) {
     if (!elem.hasAttribute('href')) continue;
     var href = elem.getAttribute('href');
 
-    if (href.search(/^javascript:\s*void\(\s*0?\s*\)/) !== -1 || href.search(/javascript:\s*;/) !== -1) {
-        href = '/';
+    if (href.search(/^javascript:\s*void\(\s*0?\s*\)/i) !== -1 || href.search(/^javascript:\s*;?$/i) !== -1) {
+        href = '';
     }
 
     var text = elem.textContent.trim();
-    if (text.trim().length === 0) {
+    if (text.length === 0) {
         var imgs = elem.getElementsByTagName('img');
         if (imgs.length > 0 && imgs[0].hasAttribute('alt')) {
             text = imgs[0].getAttribute('alt').trim(); 
@@ -49,7 +57,7 @@ for(var i = 0; i < elems.length; ++i) {
     }
 
 
-    if (stopOnRu && rus.indexOf(text.trim().toLowerCase()) !== -1 && 
+    if (stopOnRu && rus.includes(text.trim().toLowerCase()) && 
             (href.startsWith(window.location.origin) || href.startsWith('/'))) {
         return {href: href};
     }
@@ -66,7 +74,6 @@ for(var i = 0; i < elems.length; ++i) {
 
     } else {
         
-        //console.log(href, text);
         var score = 0;
         if (href.search(/\babout\b/i) !== -1) {
              //score += max_about_links - i;
@@ -90,6 +97,9 @@ for(var i = 0; i < elems.length; ++i) {
             score += 500;
         } else if (text.search(/(^|\s)Об?[  ]/) !== -1) {
             score += 250;
+        } else if (text.search(/(^|\s)компани[яию]($|\s)/i) !== -1 || 
+                   text.search(/(^|\s)фирм[аеу]($|\s)/i) !== -1) {
+            score += 150;
         } else if (text.search(/(^|\s)об?[  ][а-яё]+($|\s)/i) !== -1) {
             score += 100;
         }

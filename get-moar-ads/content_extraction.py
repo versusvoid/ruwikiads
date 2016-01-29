@@ -8,6 +8,8 @@ from time import time, sleep
 from selenium import webdriver
 from selenium.common.exceptions import TimeoutException, WebDriverException
 from selenium.webdriver.support.wait import WebDriverWait
+from urllib.error import URLError
+from http.client import RemoteDisconnected
 
 class DriverHolder(object):
 
@@ -16,6 +18,7 @@ class DriverHolder(object):
 
 
 def renew_driver(old_driver=None):
+    print('renewing driver')
 
     if old_driver:
         try:
@@ -53,7 +56,7 @@ def get_company_page(driver, url):
                 log('Executing:', url[i + 1:])
                 log('Current url:', old_url)
                 driver.driver.execute_script(url[i + 1:])
-                sleep(1)
+                sleep(5)
                 log('New url:', driver.driver.current_url)
         else:
             #log('Getting:', url)
@@ -61,12 +64,12 @@ def get_company_page(driver, url):
                 try:
                     driver.driver.get(url)
                     break
-                except TimeoutException as e:
+                except (TimeoutException, URLError, RemoteDisconnected):
                     renew_driver(driver)
                     if i == 1:
                         raise
             #log('Got:', url)
-        WebDriverWait(driver, 30).until(lambda d: d.driver.execute_script('return document.readyState === "complete";'))
+        WebDriverWait(driver.driver, 10).until(lambda d: d.execute_script('return document.readyState === "complete";'))
     except (TimeoutException, WebDriverException):
         raise PageLoadException(url)
     #wait_log(driver.driver.page_source)
@@ -102,7 +105,7 @@ def compute_child_url(url, child_str_url):
             old_path = '/'
         assert '/' in old_path, url
             
-        new_path = url.path[url.path.rfind('/') + 1:] + child_url.path
+        new_path = old_path[:old_path.rfind('/') + 1] + child_url.path
 
     if len(new_path) == 0:
         new_path = '/'
@@ -126,7 +129,7 @@ def extract_from_child_page(driver, url, links):
     for href in links:
         new_url = compute_child_url(url, href)
         if url != new_url:
-            log('No text at base url, trying: ', new_url.geturl())
+            wait_log('No text at base url, trying: ', new_url.geturl())
             get_company_page(driver, new_url.geturl())
             # TODO может не стоит останавливаться на одной возможности?
             return extract_content(driver)
@@ -153,5 +156,5 @@ def output_extracted_content(f, extracted_content, url):
         #input()
     print(url.geturl(), '\n', file=f)
     print(extracted_content, file=f)
-
+    print('---------===============---------===============---------', file=f)
 

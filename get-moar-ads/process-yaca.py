@@ -8,35 +8,29 @@ import sys
 import re
 import html.parser
 import urllib.parse
+import resource
 from selenium import webdriver
 from selenium.common.exceptions import WebDriverException
 from time import time
 from urllib.error import URLError
 from http.client import RemoteDisconnected
 
+try:
+    resource.setrlimit(resource.RLIMIT_VMEM, (2**31 * 3, 2**31 * 3))
+except:
+    resource.setrlimit(resource.RLIMIT_AS, (2**31 * 3, 2**31 * 3))
 
 def process_domain(f, driver, str_url):
     log('\n-------------------------------\n')
     log(str_url, '\n')
 
-    #start = time()
     get_company_page(driver, str_url)
-    #end = time()
-    #print('Getting took:', end - start)
 
     url = urllib.parse.urlparse(driver.driver.current_url)
     new_url = url
 
-    #print('start')
-    #start = process_time()
-    #start1 = time()
     links = get_all_links(driver, stop_on_ru=True)
-    #end = process_time()
-    #end1 = time()
-    #print('end')
-    #wait_log('Took:', end - start, 'or', end1 - start1)
     if type(links) == dict:
-        # TODO неплохо бы проверку на домен
         new_url = compute_child_url(url, links['href'])
         assert new_url is not None, str_url
         log('Switching from', url.geturl(), 'to russian url:', new_url.geturl())
@@ -107,6 +101,7 @@ def run(id, urls):
     '''
     driver = renew_driver()
 
+    failed_urls = []
     try:
         '''
         while True:
@@ -117,32 +112,38 @@ def run(id, urls):
         '''
 
         with open('data/output/yaca-ads-{}.txt'.format(id), 'w') as f:
-            i = 0
-            for str_url in urls:
-                i += 1
-                if i % 100 == 0:
+            for i, str_url in enumerate(urls):
+                if (i + 1) % 100 == 0:
                     print('Thread #', id, ': ', i, file=sys.stderr, sep='')
                     renew_driver(driver)
-                print('Trying', str_url, file=f)
-                f.flush()
 
                 success = False
+                error = None
                 try:
-                    for i in range(2):
+                    for _ in range(2):
                         try:
                             success = process_domain(f, driver, str_url)
                             break
-                        except (URLError, RemoteDisconnected):
+                        except (URLError, RemoteDisconnected) as e:
                             print('Looks like phantom is down at', str_url, file=sys.stderr)
+                            error = e
                             renew_driver(driver)
                 except PageLoadException as e:
                     print("Can't get", e.args[0], file=sys.stderr)
+                    error = e
                 except AssertionError as e:
+                    error = e
                     print('Something went very bad at', str_url + ':', file=sys.stderr)
-                    traceback.print_exception(sys.exc_info())
+                    traceback.print_exception(*sys.exc_info())
 
-                print('---------===============---------===============---------', file=f)
-                f.flush()
+                if not success:
+                    if error is None:
+                        failed_urls.append(str_url)
+                    elif len(error.args) > 0 and type(error.args[0]) == str:
+                        failed_urls.append(','.join([str_url, type(error).__name__, error.args[0]]))
+                    else:
+                        failed_urls.append(','.join([str_url, type(error).__name__]))
+
 
                 while len(driver.driver.window_handles) > 1:
                     print('Closing additional window from', str_url, file=sys.stderr)
@@ -152,29 +153,38 @@ def run(id, urls):
 
     except:
         exc_info = sys.exc_info()
+        failed_urls.append(str_url)
+
         print('Unrecoverable error at', str_url, 'in thread #{}:'.format(id), exc_info[0], file=sys.stderr)
         try:
             for entry in driver.driver.get_log('browser'):
                 print(entry['message'][:-4], file=sys.stderr)
+        except: pass
+        try:
             driver.driver.quit()
         except: pass
         traceback.print_exception(*exc_info)
-        exit()
+
+    if len(failed_urls) > 0:
+        with open('data/output/yaca-failed-{}.txt'.format(id), 'w') as f:
+            for url in failed_urls:
+                print(url, file=f)
 
 
-#urls = []
-urls = set()
-with open('data/input/YaCa_02.2014_business.csv', 'r') as f:
-#with open('data/input/test-urls.csv', 'r') as f:
+urls = []
+#urls = set()
+#with open('data/input/YaCa_02.2014_business.csv', 'r') as f:
+with open('data/input/test-urls.csv', 'r') as f:
     for line in f:
         url = urllib.parse.urlparse(line.strip().split(',', 1)[0])
         assert url.scheme.startswith('http') 
-        urls.add('{}://{}/'.format(url.scheme, url.netloc))
-        #urls.append('{}://{}/'.format(url.scheme, url.netloc))
+        #urls.add('{}://{}/'.format(url.scheme, url.netloc))
+        urls.append('{}://{}/'.format(url.scheme, url.netloc))
+
 if type(urls) != list:
     urls = list(urls)
 
-NUM_THREADS=8
+NUM_THREADS=1
 urls_per_thread = len(urls) // NUM_THREADS
 abundance = len(urls) % NUM_THREADS
 

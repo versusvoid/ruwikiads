@@ -1,5 +1,9 @@
 "use strict";
 
+function isNative(func) {
+    return /^\s*function[^{]+{\s*\[native code\]\s*}\s*$/.test(func);
+}
+
 if (typeof(Array.prototype.setLast) === "undefined") {
 
     Array.prototype.last = function () {
@@ -15,7 +19,7 @@ if (typeof(Array.prototype.setLast) === "undefined") {
 
     String.prototype.last = function () {
         var str = String(this);
-        return str.charAt(str.length - 1);
+        return str[str.length - 1];
     };
 
     /*
@@ -38,14 +42,18 @@ if (typeof(Array.prototype.setLast) === "undefined") {
 if (typeof(Array.prototype.includes) === "undefined") {
 
     Array.prototype.includes = function (value) {
-        return this.indexOf(value) !== -1;
+        var index = this.indexOf(value);
+        return typeof(index) === 'number' && index !== -1;
     };
+}
 
+
+if (typeof(String.prototype.includes) === "undefined") {
 
     String.prototype.includes = function(substring) {
-        return String(this).indexOf(substring) !== -1;
+        var index = String(this).indexOf(substring);
+        return typeof(index) === 'number' && index !== -1;
     };
-
 }
 
 
@@ -270,10 +278,16 @@ while (pathStack.length > 0) {
         textsStack.push({texts: [], nonLinkTextPresent: false});
         
     } 
-    /*
+    /* * /
     else {
-        console.log('Skipping element',element.childNodes[pathStack.last().childIdx].nodeType, element.childNodes[pathStack.last().childIdx].tagName, 'with text:\n', element.childNodes[pathStack.last().childIdx].textContent);
-    }*/
+        //console.log('Skipping element',element.childNodes[pathStack.last().childIdx].nodeType, element.childNodes[pathStack.last().childIdx].tagName, 'with text:\n', element.childNodes[pathStack.last().childIdx].textContent);
+        console.log(skipTags.includes('NAV'), skipTags.includes('DIV'));
+        console.log(skipTags.indexOf('DIV'));
+        console.log(element.childNodes[pathStack.last().childIdx].nodeType === 1, 
+                    !skipTags.includes(element.childNodes[pathStack.last().childIdx].tagName.toUpperCase()), 
+                    isVisible(element.childNodes[pathStack.last().childIdx]));
+        console.log('Skipping element', element.childNodes[pathStack.last().childIdx].nodeType, element.childNodes[pathStack.last().childIdx].tagName);
+    }/ * */
        
 }
 
