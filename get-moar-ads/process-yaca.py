@@ -9,9 +9,10 @@ import re
 import html.parser
 import urllib.parse
 import resource
+import os
 from selenium import webdriver
 from selenium.common.exceptions import WebDriverException
-from time import time
+from time import time, gmtime, strftime
 from urllib.error import URLError
 from http.client import RemoteDisconnected
 
@@ -90,6 +91,8 @@ def process_domain(f, driver, str_url):
         return False
 
 
+directory = strftime('data/output/yaca-ads-%d.%m.%Y-%H:%M:%S', gmtime())
+os.mkdir(directory)
 
 def run(id, urls):
 
@@ -111,7 +114,7 @@ def run(id, urls):
             print('google took', end - start)
         '''
 
-        with open('data/output/yaca-ads-{}.txt'.format(id), 'w') as f:
+        with open('{}/yaca-ads-{}.txt'.format(directory, id), 'w') as f:
             for i, str_url in enumerate(urls):
                 if (i + 1) % 100 == 0:
                     print('Thread #', id, ': ', i, file=sys.stderr, sep='')
@@ -153,7 +156,10 @@ def run(id, urls):
 
     except:
         exc_info = sys.exc_info()
-        failed_urls.append(str_url)
+        if len(exc_info[1].args) > 0 and type(exc_info[1].args[0]) == str:
+            failed_urls.append(','.join([str_url, exc_info[0].__name__, exc_info[1].args[0]]))
+        else:
+            failed_urls.append(','.join([str_url, exc_info[0].__name__]))
 
         print('Unrecoverable error at', str_url, 'in thread #{}:'.format(id), exc_info[0], file=sys.stderr)
         try:
@@ -166,15 +172,15 @@ def run(id, urls):
         traceback.print_exception(*exc_info)
 
     if len(failed_urls) > 0:
-        with open('data/output/yaca-failed-{}.txt'.format(id), 'w') as f:
+        with open('{}/yaca-failed-{}.txt'.format(directory, id), 'w') as f:
             for url in failed_urls:
                 print(url, file=f)
 
 
 urls = []
 #urls = set()
-#with open('data/input/YaCa_02.2014_business.csv', 'r') as f:
-with open('data/input/test-urls.csv', 'r') as f:
+with open('data/input/YaCa_02.2014_business.csv', 'r') as f:
+#with open('data/input/test-urls.csv', 'r') as f:
     for line in f:
         url = urllib.parse.urlparse(line.strip().split(',', 1)[0])
         assert url.scheme.startswith('http') 
@@ -184,9 +190,10 @@ with open('data/input/test-urls.csv', 'r') as f:
 if type(urls) != list:
     urls = list(urls)
 
-NUM_THREADS=1
+NUM_THREADS=8
 urls_per_thread = len(urls) // NUM_THREADS
 abundance = len(urls) % NUM_THREADS
+
 
 threads = []
 for i in range(NUM_THREADS):
@@ -197,8 +204,8 @@ for i in range(NUM_THREADS):
 for thread in threads:
     thread.join()
 
-with open('data/output/yaca-ads.txt', 'w') as of:
+with open('{}/yaca-ads.txt'.format(directory), 'w') as of:
     for i in range(NUM_THREADS):
-        with open('data/output/yaca-ads-{}.txt'.format(i), 'r') as f:
+        with open('{}/yaca-ads-{}.txt'.format(directory, i), 'r') as f:
             for line in f:
                 print(line, file=of, end='')
