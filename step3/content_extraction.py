@@ -26,7 +26,7 @@ def renew_driver(old_driver=None):
         except: pass
 
     new_driver = webdriver.PhantomJS(service_args=['--load-images=false', '--disk-cache=true'])
-    new_driver.set_page_load_timeout(20)
+    new_driver.set_page_load_timeout(25)
 
     if old_driver:
         old_driver.driver = new_driver
@@ -57,19 +57,24 @@ def get_company_page(driver, url):
                 log('Current url:', old_url)
                 driver.driver.execute_script(url[i + 1:])
                 sleep(5)
+                try:
+                    WebDriverWait(driver.driver, 30).until(lambda d: d.execute_script('return document.readyState === "complete";'))
+                except ConnectionResetError:
+                    renew_driver(driver)
+                    raise PageLoadException(url)
                 log('New url:', driver.driver.current_url)
         else:
             #log('Getting:', url)
             for i in range(2):
                 try:
                     driver.driver.get(url)
+                    WebDriverWait(driver.driver, 30).until(lambda d: d.execute_script('return document.readyState === "complete";'))
                     break
-                except (TimeoutException, URLError, RemoteDisconnected):
+                except (TimeoutException, URLError, RemoteDisconnected, ConnectionResetError):
                     renew_driver(driver)
                     if i == 1:
                         raise
             #log('Got:', url)
-        WebDriverWait(driver.driver, 10).until(lambda d: d.execute_script('return document.readyState === "complete";'))
     except (TimeoutException, WebDriverException):
         raise PageLoadException(url)
     #wait_log(driver.driver.page_source)

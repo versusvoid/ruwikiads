@@ -13,6 +13,9 @@ def clear_wikitext(wikitext):
     text = WikiExtractor.compact(text)
     return '\n'.join(text) 
 
+
+
+# --------- ads ---------
 def extract_wiki_section(wikitext):
     i = wikitext.find('==')
     if i != -1: return wikitext[:i]
@@ -34,12 +37,12 @@ def extract_ads(wikitext):
     
     return clear_wikitext(extract_wiki_section(after))
 
-with open('filtered-ads.txt', 'wb') as f:
-    context = ET.iterparse('ads.xml', ['start', 'end'])
+with open('data/output/ads-samples.txt', 'wb') as f:
+    context = ET.iterparse('../step1/data/output/ads.xml', ['end'])
     context = iter(context)
     event, root = next(context)
     for event, elem in context:
-        if event == 'start' or elem.tag != 'page': continue
+        if elem.tag != 'page': continue
 
         f.write(elem.find('title').text.encode('utf-8'))
         f.write(b'\n')
@@ -51,4 +54,34 @@ with open('filtered-ads.txt', 'wb') as f:
 
     root.clear()
     del context
+
+
+
+# ------- featured -------
+def split_article(wikitext):
+    sections = re.split('^=+[^=]+=+$', wikitext, flags=re.MULTILINE)
+    for section in sections:
+        if len(section) < 100: continue
+        section = clear_wikitext(section)
+        if len(section) > 100:
+            yield section
+
+with open('data/output/featured-samples.txt', 'wb') as f:
+    context = ET.iterparse('../step1/data/output/featured.xml', ['end'])
+    context = iter(context)
+    event, root = next(context)
+    for event, elem in context:
+        if elem.tag != 'text': continue
+
+        for section in split_article(elem.text):
+            f.write(section.encode('utf-8'))
+            f.write(b'\n')
+            f.write(b'\n-----------------------==========================-----------------------==========================-----------------------\n')
+
+        elem.clear()
+        root.clear()
+
+    root.clear()
+    del context
+
 
