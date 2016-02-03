@@ -14,6 +14,11 @@ import subprocess
 import bz2
 import re
 
+import cProfile, pstats, io
+mystem_prof = cProfile.Profile()
+feature_prof = cProfile.Profile()
+xgb_prof = cProfile.Profile()
+line_prof = cProfile.Profile()
 
 features_indexes = None
 assert os.path.exists('../step5/data/output/features_indexes.pickle')
@@ -25,13 +30,16 @@ bst = xgb.Booster(model_file='../step6/data/output/xgb.model')
 def is_ads(section):
     
     annotated = None
+    mystem_prof.enable()
     try:
         p = subprocess.run(['../step5/mystem', '-gind'], input=section, timeout=15, stdout=subprocess.PIPE, universal_newlines=True)
         annotated = p.stdout
     except subprocess.TimeoutExpired:
         print('mystem TimeoutExpired on', section, sep='\n', file=sys.stderr)
         return False
+    mystem_prof.disable()
 
+    feature_prof.enable()
     sample_features = {}
     word_sequence = []
     for l in annotated.split('\n'):
@@ -50,7 +58,11 @@ def is_ads(section):
             col_ind.append(id)
 
     vector = csr_matrix((features, (row_ind, col_ind)), shape=(1, len(features_indexes)))
+    feature_prof.disable()
+
+    xgb_prof.enable()
     predicted = bst.predict(xgb.DMatrix(vector))
+    xgb_prof.disable()
     return predicted[0] > 0.75
 
 
@@ -75,6 +87,8 @@ with open('data/output/wikiads.txt', 'w') as adsf:
         pageParts = []
         i = 0
         for l in f:
+            line_prof.enable()
+
             l = l.decode('utf-8')
             if isPage:
                 if isText:
@@ -87,13 +101,16 @@ with open('data/output/wikiads.txt', 'w') as adsf:
                         i += 1
                         if i % 1000 == 0:
                             print(i)
+                            if i == 2000: break
 
                         pageText = ''.join(pageParts)
                         if (re.search('\{\{реклама\}\}', pageText, flags=re.IGNORECASE) or 
                                 re.search('\{\{(Избранная|Хорошая|Добротная) статья', pageText, flags=re.IGNORECASE)):
+                            line_prof.disable()
                             continue
                         
                         assert title is not None
+                        line_prof.disable()
                         process_page(adsf, title, pageText)
                         title = None
                         pageParts = []
@@ -113,3 +130,12 @@ with open('data/output/wikiads.txt', 'w') as adsf:
                 isPage = True
 
 
+            line_prof.disable()
+
+
+for prof in [mystem_prof, feature_prof, xgb_prof, line_prof]:
+    s = io.StringIO()
+    sortby = 'cumulative'
+    ps = pstats.Stats(prof, stream=s).sort_stats(sortby)
+    ps.print_stats()
+    print(s.getvalue())
