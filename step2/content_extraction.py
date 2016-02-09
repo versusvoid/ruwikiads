@@ -161,5 +161,5 @@ def output_extracted_content(f, extracted_content, url):
         #input()
     print(url.geturl(), '\n', file=f)
     print(extracted_content, file=f)
-    print('---------===============---------===============---------', file=f)
+    print('samplesSeparator', file=f)
 

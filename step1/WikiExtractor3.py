@@ -36,8 +36,7 @@
 Cleans wiki-formatted text
 """
 
-import re
-from itertools import zip_longest
+import regex
 from html import unescape
 
 # ===========================================================================
@@ -65,6 +64,14 @@ discardElements = [
     'ul', 'li', 'ol', 'dl', 'dt', 'dd', 'menu', 'dir',
     'ref', 'references', 'img', 'imagemap', 'source', 'small'
 ]
+
+regex_cache = {}
+def get_regex(pattern, *args, **kwargs):
+    re = regex_cache.get(pattern)
+    if re is None:
+        re = regex.compile(pattern, *args, **kwargs)
+        regex_cache[pattern] = re
+    return re
 
 
 # =========================================================================
@@ -118,44 +125,38 @@ placeholder_tags = {'math': 'formula', 'code': 'codice'}
 
 # Match HTML comments
 # The buggy template {{Template:T}} has a comment terminating with just "->"
-comment = re.compile(r'<!--.*?-->', re.DOTALL)
+comment = regex.compile(r'<!--.*?-->', regex.DOTALL)
 
 # Match ignored tags
 ignored_tag_patterns = []
-
-
-def ignoreTag(tag):
-    left = re.compile(r'<{}\b.*?>'.format(tag), re.IGNORECASE | re.DOTALL)  # both <ref> and <reference>
-    right = re.compile(r'</\s*{}>'.format(tag), re.IGNORECASE)
-    ignored_tag_patterns.append((left, right))
-
-
 for tag in ignoredTags:
-    ignoreTag(tag)
+    left = regex.compile(r'<{}\b.*?>'.format(tag), regex.IGNORECASE | regex.DOTALL)  # both <ref> and <reference>
+    right = regex.compile(r'</\s*{}>'.format(tag), regex.IGNORECASE)
+    ignored_tag_patterns.append((left, right))
 
 # Match selfClosing HTML tags
 selfClosing_tag_patterns = [
-    re.compile(r'<\s*{}\b[^>]*/\s*>'.format(tag), re.DOTALL | re.IGNORECASE) for tag in selfClosingTags
+    regex.compile(r'<\s*{}\b[^>]*/\s*>'.format(tag), regex.DOTALL | regex.IGNORECASE) for tag in selfClosingTags
     ]
 
 # Match HTML placeholder tags
 placeholder_tag_patterns = [
-    (re.compile(r'<\s*{}(\s*| [^>]+?)>.*?<\s*/\s*{}\s*>'.format(tag, tag), re.DOTALL | re.IGNORECASE),
+    (regex.compile(r'<\s*{}(\s*| [^>]+?)>.*?<\s*/\s*{}\s*>'.format(tag, tag), regex.DOTALL | regex.IGNORECASE),
      repl) for tag, repl in placeholder_tags.items()
     ]
 
 # Matches bold/italic
-bold_italic = re.compile(r"'''''(.*?)'''''")
-bold = re.compile(r"'''(.*?)'''")
-italic_quote = re.compile(r"''\"([^\"]*?)\"''")
-italic = re.compile(r"''(.*?)''")
-quote_quote = re.compile(r'""([^"]*?)""')
+bold_italic = regex.compile(r"'''''(.*?)'''''")
+bold = regex.compile(r"'''(.*?)'''")
+italic_quote = regex.compile(r"''\"([^\"]*?)\"''")
+italic = regex.compile(r"''(.*?)''")
+quote_quote = regex.compile(r'""([^"]*?)""')
 
 # Matches space
-spaces = re.compile(r' {2,}')
+spaces = regex.compile(r' {2,}')
 
 # Matches dots
-dots = re.compile(r'\.{4,}')
+dots = regex.compile(r'\.{4,}')
 
 
 def findBalanced(text, openDelim, closeDelim):
@@ -166,15 +167,15 @@ def findBalanced(text, openDelim, closeDelim):
     :return: an iterator producing pairs (start, end) of start and end
     positions in text containing a balanced expression.
     """
-    openPat = '|'.join([re.escape(x) for x in openDelim])
+    openPat = '|'.join([regex.escape(x) for x in openDelim])
     # patter for delimiters expected after each opening delimiter
-    afterPat = {o: re.compile(openPat + '|' + c, re.DOTALL) for o, c in zip(openDelim, closeDelim)}
+    afterPat = {o: get_regex(openPat + '|' + c, regex.DOTALL) for o, c in zip(openDelim, closeDelim)}
     stack = []
     start = 0
     cur = 0
     # end = len(text)
     startSet = False
-    startPat = re.compile(openPat)
+    startPat = get_regex(openPat)
     nextPat = startPat
     while True:
         next = nextPat.search(text, cur)
@@ -225,7 +226,7 @@ MagicWordsSwitches = (
 )
 
 
-magicWordsRE = re.compile('|'.join(MagicWordsSwitches))
+magicWordsRE = regex.compile('|'.join(MagicWordsSwitches))
 
 
 # ----------------------------------------------------------------------
@@ -236,8 +237,8 @@ def dropNested(text, openDelim, closeDelim):
     """
     A matching function for nested expressions, e.g. namespaces and tables.
     """
-    openRE = re.compile(openDelim, re.IGNORECASE)
-    closeRE = re.compile(closeDelim, re.IGNORECASE)
+    openRE = get_regex(openDelim, regex.IGNORECASE)
+    closeRE = get_regex(closeDelim, regex.IGNORECASE)
     # partition text in separate blocks { } { }
     spans = []  # pairs (s, e) for each partition
     nest = 0  # nesting level
@@ -379,13 +380,13 @@ wgUrlProtocols = [
 # \p{Zs} is unicode 'separator, space' category. It covers the space 0x20
 # as well as U+3000 is IDEOGRAPHIC SPACE for bug 19052
 EXT_LINK_URL_CLASS = r'[^][<>"\x00-\x20\x7F\s]'
-ExtLinkBracketedRegex = re.compile(
+ExtLinkBracketedRegex = regex.compile(
     '\[(((?i)' + '|'.join(wgUrlProtocols) + ')' + EXT_LINK_URL_CLASS + r'+)\s*([^\]\x00-\x08\x0a-\x1F]*?)\]',
-    re.S | re.U)
-EXT_IMAGE_REGEX = re.compile(
+    regex.S | regex.U)
+EXT_IMAGE_REGEX = regex.compile(
     r"""^(http://|https://)([^][<>"\x00-\x20\x7F\s]+)
     /([A-Za-z0-9_.,~%\-+&;#*?!=()@\x80-\xFF]+)\.((?i)gif|png|jpg|jpeg)$""",
-    re.X | re.S | re.U)
+    regex.X | regex.S | regex.U)
 
 
 def replaceExternalLinks(text):
@@ -401,7 +402,7 @@ def replaceExternalLinks(text):
         # # The characters '<' and '>' (which were escaped by
         # # removeHTMLtags()) should not be included in
         # # URLs, per RFC 2396.
-        # m2 = re.search('&(lt|gt);', url)
+        # m2 = regex.search('&(lt|gt);', url)
         # if m2:
         #     link = url[m2.end():] + ' ' + link
         #     url = url[0:m2.end()]
@@ -423,9 +424,9 @@ def replaceExternalLinks(text):
 # ----------------------------------------------------------------------
 
 # match tail after wikilink
-tailRE = re.compile('\w+')
+tailRE = regex.compile('\w+')
 
-syntaxhighlight = re.compile('&lt;syntaxhighlight .*?&gt;(.*?)&lt;/syntaxhighlight&gt;', re.DOTALL)
+syntaxhighlight = regex.compile('&lt;syntaxhighlight .*?&gt;(.*?)&lt;/syntaxhighlight&gt;', regex.DOTALL)
 
 expand_templates = True
 
@@ -436,10 +437,10 @@ def clean(text):
     """
 
     # Drop transclusions (template, parser functions)
-    text = dropNested(text, r'{{', r'}}')
+    text = dropNested(text, r'\{\{', r'\}\}')
 
     # Drop tables
-    text = dropNested(text, r'{\|', r'\|}')
+    text = dropNested(text, r'\{\|', r'\|\}')
 
     # replace external links
     text = replaceExternalLinks(text)
@@ -514,15 +515,15 @@ def clean(text):
     text = text.replace('\t', ' ')
     text = spaces.sub(' ', text)
     text = dots.sub('...', text)
-    text = re.sub(u' (,:\.\)\]»)', r'\1', text)
-    text = re.sub(u'(\[\(«) ', r'\1', text)
-    text = re.sub(r'\n\W+?\n', '\n', text, flags=re.U)  # lines with only punctuations
+    text = regex.sub(u' (,:\.\)\]»)', r'\1', text)
+    text = regex.sub(u'(\[\(«) ', r'\1', text)
+    text = regex.sub(r'\n\W+?\n', '\n', text, flags=regex.U)  # lines with only punctuations
     text = text.replace(',,', ',').replace(',.', '.')
     return text
 
 
 # skip level 1, it is page name level
-section = re.compile(r'(==+)\s*(.*?)\s*\1')
+section = regex.compile(r'(==+)\s*(.*?)\s*\1')
 
 
 def compact(text):
@@ -593,6 +594,7 @@ def clear_wikitext(wikitext):
     return '\n'.join(text) 
 
 def split_article(wikitext):
+    result = []
     start = 0
     for match in section.finditer(wikitext):
         section_text = wikitext[start:match.start(0)]
@@ -600,5 +602,7 @@ def split_article(wikitext):
         if len(section_text) < 100: continue
         section_text = clear_wikitext(section_text)
         if len(section_text) > 100:
-            yield section_text
+            result.append(section_text)
+
+    return result
 
