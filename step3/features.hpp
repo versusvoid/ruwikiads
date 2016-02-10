@@ -6,12 +6,6 @@
 #include <boost/regex.hpp>
 
 
-
-auto pos_regex = boost::wregex(L"=([A-Z]+)[,=]");
-auto russian_word_regex = boost::wregex(L"[а-яё]+");
-auto superlative_regex = boost::wregex(L"\\bпрев\\b");
-auto person_regex = boost::wregex(L"\\b[12]-л\\b");
-
 typedef std::wstring one_gram;
 std::unordered_set<one_gram> one_grams = {
     L"агенство",
@@ -91,16 +85,16 @@ std::set<three_gram> three_grams = {
 };
 
 typedef std::unordered_map<std::wstring, float> features_dict;
-inline void record_feature(features_dict& features, std::initializer_list<std::wstring> const& l) {
+inline void record_feature(features_dict& features, std::initializer_list<std::wstring> const& l, float value = 1) {
     auto feature = boost::algorithm::join(l, L"-");
     auto pos = features.find(feature);
     if (pos != features.end()) {
-        pos->second += 1;
+        pos->second += value;
     } else {
-        features[feature] = 1;
+        features[feature] = value;
     }
 }
-inline void record_feature(features_dict& features, const std::wstring& s) { record_feature(features, {s}); }
+inline void record_feature(features_dict& features, const std::wstring& s, float value = 1) { record_feature(features, {s}, value); }
 
 inline bool contains_russian(const std::wstring& str) {
     for (std::size_t i = 0; i < str.length(); ++i) {
@@ -147,6 +141,16 @@ inline bool gerund_like(const std::wstring& lexeme) {
     return lexeme.length() > 3 and lexeme.substr(lexeme.length() - 3) == L"ние";
 }
 
+inline bool is_superlative(const std::wstring& info) {
+    return info.find(L",прев") != info.npos;
+}
+
+inline bool is_12person(const std::wstring& info) {
+    return info.find(L"1-л") != info.npos or info.find(L"2-л") != info.npos;
+}
+
+
+
 std::unordered_set<std::wstring> ignore_pos = {L"CONJ", L"INTJ", L"PART", L"PR"};
 void extract_features_from_word(features_dict& features, std::wstring& word, std::vector<std::wstring> sequence) {
     std::wstring form, info;
@@ -188,7 +192,6 @@ void extract_features_from_word(features_dict& features, std::wstring& word, std
 
     auto lexeme = extract_lexeme(info);
     assert(not lexeme.empty());
-    // TODO не просто лексему, но и грамматическую информацию на неё?
     sequence.push_back(lexeme);
 
     if (gerund_like(lexeme)) {
@@ -201,10 +204,12 @@ void extract_features_from_word(features_dict& features, std::wstring& word, std
         record_feature(features, {lexeme, grammatical_info});
     }
 
-    if (boost::regex_search(info, superlative_regex)) {
+    //if (boost::regex_search(info, superlative_regex)) {
+    if (is_superlative(info)) {
         record_feature(features, L"превосходное прилагательное%");
     }
-    if (boost::regex_search(info, person_regex)) {
+    //if (boost::regex_search(info, person_regex)) {
+    if (is_12person(info)) {
         record_feature(features, L"1,2-е лицо%");
     }
 }
