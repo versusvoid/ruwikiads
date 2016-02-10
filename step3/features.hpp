@@ -2,8 +2,78 @@
 #include <unordered_set>
 #include <unordered_map>
 #include <tuple>
+#include <chrono>
 #include <boost/algorithm/string.hpp>
 #include <boost/regex.hpp>
+
+#include <boost/unordered_set.hpp>
+#include <boost/unordered_map.hpp>
+
+
+
+struct profiler {
+
+    profiler(const std::string& name)
+        : name(name)
+        , calls(0)
+    {}
+
+    ~profiler() {
+        std::wcout << name.c_str() << ": " << elapsed_seconds.count() << "s in " << calls << " calls" << std::endl;
+    }
+
+    inline void start_profiling() {
+        start = std::chrono::high_resolution_clock::now();
+    }
+
+    inline void stop_profiling() {
+        calls += 1;
+        elapsed_seconds += std::chrono::high_resolution_clock::now() - start;
+    }
+
+
+    std::string name;
+    uint64_t calls;
+    std::chrono::duration<double> elapsed_seconds;
+
+private:
+    std::chrono::time_point<std::chrono::high_resolution_clock> start;
+};
+
+profiler first_half("first half");
+profiler second_half("second half");
+
+struct profiler_guard {
+
+    profiler_guard(profiler& parent, bool run=true)
+        : parent(parent)
+        , _start(std::chrono::high_resolution_clock::now())
+        , running(run)
+    {}
+
+    inline void start() {
+        _start = std::chrono::high_resolution_clock::now();
+        running = true;
+    }
+
+    inline void stop() {
+        parent.elapsed_seconds += std::chrono::high_resolution_clock::now() - _start;
+        parent.calls += 1;
+        running = false;
+    }
+
+    ~profiler_guard() {
+        if (running) {
+            parent.elapsed_seconds += std::chrono::high_resolution_clock::now() - _start;
+            parent.calls += 1;
+        }
+    }
+
+    profiler& parent;
+    std::chrono::time_point<std::chrono::high_resolution_clock> _start;
+    bool running;
+};
+
 
 
 typedef std::wstring one_gram;
@@ -84,9 +154,17 @@ std::set<three_gram> three_grams = {
     std::make_tuple(L"один", L"из", L"самый")
 };
 
+profiler record_feature_profiler("record feature");
 typedef std::unordered_map<std::wstring, float> features_dict;
-inline void record_feature(features_dict& features, std::initializer_list<std::wstring> const& l, float value = 1) {
+/*
+inline void record_feature(features_dict& features, std::initializer_list<const std::wstring&> l, float value = 1) {
+    profiler_guard guard(record_feature_profiler);
+
     auto feature = boost::algorithm::join(l, L"-");
+}
+*/
+/*inline */void record_feature(features_dict& features, const std::wstring& feature, float value = 1) {
+
     auto pos = features.find(feature);
     if (pos != features.end()) {
         pos->second += value;
@@ -94,23 +172,88 @@ inline void record_feature(features_dict& features, std::initializer_list<std::w
         features[feature] = value;
     }
 }
-inline void record_feature(features_dict& features, const std::wstring& s, float value = 1) { record_feature(features, {s}, value); }
+/*inline */void record_feature(features_dict& features, const std::wstring& s1, const std::wstring& s2, float value = 1) {
 
-inline bool contains_russian(const std::wstring& str) {
+    profiler_guard guard(record_feature_profiler);
+
+    std::wstring feature;
+    feature.reserve(s1.length() + 1 + s2.length() + 1);
+    feature += s1;
+    feature += L'-';
+    feature += s2;
+    record_feature(features, feature, value);
+}
+/*inline */void record_feature(features_dict& features, const std::wstring& s1, const std::wstring& s2, const std::wstring& s3, float value = 1) {
+
+    profiler_guard guard(record_feature_profiler);
+
+    std::wstring feature;
+    feature.reserve(s1.length() + 1 + s2.length() + 1 + s3.length() + 1);
+    feature += s1;
+    feature += L'-';
+    feature += s2;
+    feature += L'-';
+    feature += s3;
+    record_feature(features, feature, value);
+}
+/*inline */void record_feature(features_dict& features, const std::wstring& s1, const std::wstring& s2, const std::wstring& s3, const std::wstring& s4, float value = 1) {
+
+    profiler_guard guard(record_feature_profiler);
+
+    std::wstring feature;
+    feature.reserve(s1.length() + 1 + s2.length() + 1 + s3.length() + 1 + s4.length() + 1);
+    feature += s1;
+    feature += L'-';
+    feature += s2;
+    feature += L'-';
+    feature += s3;
+    feature += L'-';
+    feature += s4;
+    record_feature(features, feature, value);
+}
+
+inline void test_leters(const std::wstring& str, bool& russian, bool& english) {
+    russian = false;
+    english = false;
     for (std::size_t i = 0; i < str.length(); ++i) {
-        if ((str[i] >= L'а' and str[i] <= L'я') or str[i] == L'ё') return true;
+        if (not russian and ((str[i] >= L'а' and str[i] <= L'я') or str[i] == L'ё')) {
+            russian = true;
+            if (english) return;
+        }
+        if (not english and (str[i] >= L'a' and str[i] <= L'z')) {
+            english = true;
+            if (russian) return;
+        }
+    }
+    return;
+}
+
+profiler letters_profiler("letters");
+inline bool contains_russian(const std::wstring& str) {
+    profiler_guard guard(letters_profiler);
+
+    for (std::size_t i = 0; i < str.length(); ++i) {
+        //if ((str[i] >= L'а' and str[i] <= L'я') or str[i] == L'ё') return true;
+        if ((str[i] >= L'а' and str[i] <= L'я') or str[i] == L'ё' or
+                (str[i] >= L'А' and str[i] <= L'Я') or str[i] == L'Ё') return true;
     }
     return false;
 }
 
 inline bool contains_english(const std::wstring& str) {
+    profiler_guard guard(letters_profiler);
+
     for (std::size_t i = 0; i < str.length(); ++i) {
-        if (str[i] >= L'a' and str[i] <= L'z') return true;
+        //if (str[i] >= L'a' and str[i] <= L'z') return true;
+        if ((str[i] >= L'a' and str[i] <= L'z') or (str[i] >= L'A' and str[i] <= L'Z')) return true;
     }
     return false;
 }
 
+profiler pos_profiler("pos");
 inline bool extract_pos(const std::wstring& info, std::wstring& pos, std::wstring& grammatical_info) {
+    profiler_guard guard(pos_profiler);
+
     auto pos_pos = info.find(L'=');
     if (pos_pos == info.npos) return false;
     auto end = pos_pos + 1;
@@ -150,31 +293,36 @@ inline bool is_12person(const std::wstring& info) {
 }
 
 
-
+profiler split_profiler("split to form and info");
+profiler pos_checks_profiler("pos record");
 std::unordered_set<std::wstring> ignore_pos = {L"CONJ", L"INTJ", L"PART", L"PR"};
 void extract_features_from_word(features_dict& features, std::wstring& word, std::vector<std::wstring> sequence) {
+    profiler_guard first_half_guard(first_half);
+
     std::wstring form, info;
     {
+        profiler_guard guard(split_profiler);
+
         auto pos = word.find(L'{');
         //std::wcout << '"' << word << '"' << word.length() << std::endl;
         assert(pos != word.npos);
 
         form = word.substr(0, pos);
-        boost::to_lower(form);
+        //boost::to_lower(form);
 
         info = word.substr(pos + 1);
     }
 
     if (not contains_russian(form)) {
-        record_feature(features, {L"non russian%"});
+        record_feature(features, L"non russian%");
         sequence.push_back(L"*");
         return;
     }
 
     bool english_letters = contains_english(form);
 
-    std::wstring pos, grammatical_info;
 
+    std::wstring pos, grammatical_info;
     if (not extract_pos(info, pos, grammatical_info)) {
         if (not english_letters) {
             sequence.push_back(form);
@@ -184,11 +332,21 @@ void extract_features_from_word(features_dict& features, std::wstring& word, std
         return;
     }
 
-    record_feature(features, {L"POS%", pos});
-    if (contains(ignore_pos, pos)) {
+    first_half_guard.stop();
+
+    {
+        profiler_guard guard(pos_checks_profiler);
+        //record_feature(features, {L"POS%", pos});
+        record_feature(features, L"POS%", pos);
+    }
+
+    if (pos == L"CONJ" or pos == L"INTJ" or pos == L"PART" or pos == L"PR") {
         sequence.push_back(form);
         return;
     }
+
+    profiler_guard second_half_guard(second_half, false);
+    second_half_guard.start();
 
     auto lexeme = extract_lexeme(info);
     assert(not lexeme.empty());
@@ -200,8 +358,9 @@ void extract_features_from_word(features_dict& features, std::wstring& word, std
     if (lexeme.length() >= 15) {
         record_feature(features, L"длинное слово%");
     }
-    if (contains(one_grams, lexeme)) {
-        record_feature(features, {lexeme, grammatical_info});
+
+    if (::contains(one_grams, lexeme)) {
+        record_feature(features, lexeme, grammatical_info);
     }
 
     //if (boost::regex_search(info, superlative_regex)) {
@@ -223,11 +382,11 @@ void extract_features_from_sequence(features_dict& features, std::vector<std::ws
     }
 
     for (std::size_t i = 1; i < sequence.size(); ++i) {
-        if (contains(two_grams, std::make_tuple(sequence[i-1], sequence[i]))) {
-            record_feature(features, {L"2gram", sequence[i-1], sequence[i]});
+        if (::contains(two_grams, std::make_tuple(sequence[i-1], sequence[i]))) {
+            record_feature(features, L"2gram", sequence[i-1], sequence[i]);
         }
-        if (i > 1 and contains(three_grams, std::make_tuple(sequence[i-2], sequence[i-1], sequence[i]))) {
-            record_feature(features, {L"3gram", sequence[i-2], sequence[i-1], sequence[i]});
+        if (i > 1 and ::contains(three_grams, std::make_tuple(sequence[i-2], sequence[i-1], sequence[i]))) {
+            record_feature(features, L"3gram", sequence[i-2], sequence[i-1], sequence[i]);
         };
     }
 }

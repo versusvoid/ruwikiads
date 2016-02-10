@@ -6,12 +6,14 @@
 #include <iostream>
 #include <bzlib.h>
 #include <stdio.h>
+#include <chrono>
 #include <boost/algorithm/string.hpp>
 #include <boost/filesystem.hpp>
 #include <boost/program_options.hpp>
 #include <boost/format.hpp>
 #include <xgboost/c_api.h>
 #include "features.hpp"
+#include "blocking_queue.hpp"
 
 #include <stdio.h>  // for popen, pclose
 #if defined(_MSC_VER)
@@ -63,6 +65,7 @@ void handle_bz_error(int bzerror, const char* function, const std::string& info 
 }
 
 
+profiler bz_readline_profiler("bz2 readline");
 std::wstring_convert<std::codecvt_utf8<wchar_t>, wchar_t> ucs2conv;
 struct bzfile_wrapper {
 
@@ -99,6 +102,8 @@ struct bzfile_wrapper {
     }
     
     bool readline(std::wstring& result) {
+        profiler_guard guard(bz_readline_profiler);
+
         auto pos = std::find(start, start + size, '\n');
         while (pos == start + size and bzfile != nullptr) {
             read_moar();
@@ -211,6 +216,15 @@ uint32_t count_samples(const std::string& filename) {
     }
 }
 
+void bzfile_reader(const std::string& filename, bound_queue<std::wstring, 10000>* lines_queue) {
+    bzfile_wrapper file(filename);
+
+    std::wstring line;
+    while(std::getline(file, line)) {
+        lines_queue->push(line);
+    }
+    lines_queue->push(L"");
+}
 
 features_dict extract_features_from_file(const std::string& filename, std::function<bool(int)> samplePredicate) {
 
@@ -219,12 +233,27 @@ features_dict extract_features_from_file(const std::string& filename, std::funct
     uint32_t sample_number = 0;
     features_dict sample_features;
     std::vector<std::wstring> word_sequence;
+    /*
+    bound_queue<std::wstring, 10000> lines_queue;
+    std::thread reader_thread(bzfile_reader,
+               filename,
+               &lines_queue);
+
+    std::wstring line = lines_queue.pop();
+    while(line.length() > 0) {
+    */
     bzfile_wrapper file(filename);
+
+    profiler end_profiler(filename + " sequence");
+    profiler word_profiler(filename + " word");
+
 
     std::wstring line;
     while(std::getline(file, line)) {
         assert(line.length() > 0);
         if (boost::starts_with(line, L"samplesSeparator")) {
+            profiler_guard guard(end_profiler);
+
             extract_features_from_sequence(sample_features, word_sequence);
 
             if (samplePredicate(sample_number)) {
@@ -241,9 +270,14 @@ features_dict extract_features_from_file(const std::string& filename, std::funct
             word_sequence.clear();
             sample_features.clear();
         } else {
+            profiler_guard guard(word_profiler);
+
             extract_features_from_word(sample_features, line, word_sequence);
         }
+
+        //line = lines_queue.pop();
     }
+    //reader_thread.join();
 
     return features_counts;
 }
@@ -261,6 +295,7 @@ features_indexes_t compute_features_indexes(const std::string& featured_samples_
                                             const std::string& ads_samples_file) {
     std::vector<std::future<features_dict>> per_file_features_counts;
 
+    /*
     uint32_t shift = 0;
     for (auto i = 0U; i < featured_samples_counts.size(); ++i) {
         per_file_features_counts.push_back(
@@ -270,13 +305,10 @@ features_indexes_t compute_features_indexes(const std::string& featured_samples_
                     );
         shift += featured_samples_counts[i];
     }
-    per_file_features_counts.push_back(
-                std::async(std::launch::async, extract_features_from_file,
-                           ads_samples_file,
-                           [] (int) { return true; })
-                );
+    */
 
-    features_dict features_counts;
+    features_dict features_counts = extract_features_from_file(ads_samples_file, [] (int) { return true; });
+
     for (auto& counts_future : per_file_features_counts) {
         join_counts(features_counts, counts_future.get());
     }
