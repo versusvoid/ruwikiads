@@ -465,7 +465,6 @@ features_indexes_t compute_features_indexes(const std::string& featured_samples_
 
 
     for (auto& counts_future : per_file_features_counts) {
-        assert(counts_future.valid());
         join_counts(features_counts, counts_future.get());
     }
 
@@ -535,7 +534,7 @@ void get_matrix_from_file(const std::string& samples_file,
     std::vector<std::wstring> word_sequence;
 
     std::shared_ptr<FILE> bunzip2(POPEN(("bunzip2 -c -k " + samples_file).c_str(), "r"), PCLOSE);
-    size_t len = 2048;
+    size_t len = 4096;
     char* buf = (char*)malloc(len * sizeof(char));
     std::wstring line;
     while(std::getline(&buf, &len, bunzip2.get(), line)) {
@@ -580,11 +579,11 @@ void split_featured(csr_matrix_t& ads_matrix, csr_matrix_t& wiki_ads_matrix,
         dst.indptr.push_back(dst.indices.size());
         dst.labels.push_back(0.0);
 
-        auto start = featured_matrix.indptr[i];
-        auto end = featured_matrix.indptr[i + 1];
+        auto start = featured_matrix.indptr.at(i);
+        auto end = featured_matrix.indptr.at(i + 1);
         for(bst_ulong j = start; j < end; ++j) {
-            dst.indices.push_back(featured_matrix.indices[j]);
-            dst.data.push_back(featured_matrix.data[j]);
+            dst.indices.push_back(featured_matrix.indices.at(j));
+            dst.data.push_back(featured_matrix.data.at(j));
         }
     }
 }
@@ -737,8 +736,14 @@ int main(int argc, char** argv)
 
         load_features_indexes(features_indexes);
 
-        std::vector<std::future<void>> async_featured_matrices;
-        for (auto i = 0U; i < featured_samples_counts.size(); ++i) {
+        std::wcout << features_indexes.size() << " features" << std::endl;
+
+
+
+        std::wcout << "Running first featured half" << std::endl;
+
+        std::vector<std::future<void>> async_featured_matrices;        
+        for (auto i = 0U; i < std::min(4UL, featured_samples_counts.size()); ++i) {
             async_featured_matrices.push_back(
                         std::async(std::launch::async,
                                    get_matrix_from_file,
@@ -755,10 +760,29 @@ int main(int argc, char** argv)
             featured_matrix_future.get();
         }
 
+        std::wcout << "Running second featured half" << std::endl;
+
+        for (auto j = 4U; j < featured_samples_counts.size(); j += 4) {
+
+            for (auto i = j; i < std::min(featured_samples_counts.size(), j + 4UL); ++i) {
+                async_featured_matrices.push_back(
+                            std::async(std::launch::async,
+                                       get_matrix_from_file,
+                                       (boost::format(featured_samples_file) % i).str(),
+                                       &features_indexes,
+                                       &featured_matrices[i]
+                                       )
+                            );
+            }
+
+
+            for (auto i = j; i < std::min(featured_samples_counts.size(), j + 4UL); ++i) {
+                async_featured_matrices[i].get();
+            }
+
+        }
+
     }
-
-
-    std::wcout << features_indexes.size() << " features" << std::endl;
 
 
     csr_matrix_t wiki_ads_matrix(wiki_ads_samples_count + featured_test_samples_count);
@@ -775,7 +799,7 @@ int main(int argc, char** argv)
 
 
     ads_matrix.indptr.push_back(ads_matrix.indices.size());
-    wiki_ads_matrix.indptr.push_back(ads_matrix.indices.size());
+    wiki_ads_matrix.indptr.push_back(wiki_ads_matrix.indices.size());
 
     std::wcout << "ads_matrix: " << ads_matrix.indptr.size() << " " <<  ads_matrix.labels.size() << std::endl;
     std::wcout << "wiki_ads_matrix: " << wiki_ads_matrix.indptr.size() << " " <<  wiki_ads_matrix.labels.size() << std::endl;

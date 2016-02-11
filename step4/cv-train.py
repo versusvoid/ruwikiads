@@ -15,14 +15,26 @@ def load_set(which='train'):
     del d
     return m, labels
 
+def load_mat(which='train'):
+    d = xgb.DMatrix('../step3/data/output/{}-set.dmatrix.bin'.format(which))
+    print(which, 'set has size', '{}x{}'.format(d.num_row(), d.num_row()))
+    return d
+
 bst = None
 if os.path.exists('data/output/xgb.model') and not '-u' in sys.argv:
     bst = xgb.Booster(model_file='data/output/xgb.model')
 else:
     #m, labels = load_set()
-    m, labels = load_set('test')
-    permutation = np.random.permutation(m.shape[0])
-    dtrain = xgb.DMatrix(m[permutation, :], label=labels[permutation])
+    #m, labels = load_set('test')
+    #permutation = np.random.permutation(m.shape[0])
+    #dtrain = xgb.DMatrix(m[permutation, :], label=labels[permutation])
+
+    #dtrain = load_mat()
+    dtrain = load_mat('test')
+    label = dtrain.get_label()
+    print(label.shape, type(label))
+    print(sum(label[0:601]), label[601])
+
     num_rounds=75
     #params = {'max_depth':4, 'eta':0.1, 'subsample':0.5, 'lambda':10, 'silent':1, 'objective':'binary:logistic' }
     params = {'max_depth':6, 'eta':0.3, 'subsample':1.0, 'lambda':1, 'silent':1, 'objective':'binary:logistic' }
@@ -34,8 +46,12 @@ else:
         bst.save_model('data/output/xgb.model')
 
 def test_on_set(which='train'):
-    m, labels = load_set(which)
-    dtest = xgb.DMatrix(m, label=labels)
+    #m, labels = load_set(which)
+    #dtest = xgb.DMatrix(m, label=labels)
+
+    dtest = load_mat(which)
+    labels = dtest.get_label()
+
     predicted = bst.predict(dtest)
     predicted = (predicted > 0.5).astype(int)
 
