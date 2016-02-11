@@ -2,6 +2,10 @@
 
 all: a.out
 
+# \
+	g++ --std=c++14 -g3 -ggdb3 -pthread -Wall \
+
+
 a.out: main.cpp features.hpp
 	g++ --std=c++14 -O3 -pthread -Wall \
 		main.cpp \
@@ -12,4 +16,5 @@ a.out: main.cpp features.hpp
 		-L/home/versus/tmp/xgboost/lib \
 		-Wl,-Bdynamic -lbz2 -lboost_regex -lboost_program_options -lboost_system -lboost_filesystem \
 		-Wl,-Bstatic -lxgboost -lrabit -ldmlc -Wl,-Bdynamic \
-		-lgomp -lrt -lm -ldl
+		-lgomp -lrt -lm -ldl \
+
