@@ -9,7 +9,7 @@
 #include <boost/unordered_set.hpp>
 #include <boost/unordered_map.hpp>
 
-
+#ifdef PROFILING
 
 struct profiler {
 
@@ -74,6 +74,7 @@ struct profiler_guard {
     bool running;
 };
 
+#endif
 
 
 typedef std::wstring one_gram;
@@ -154,7 +155,9 @@ std::set<three_gram> three_grams = {
     std::make_tuple(L"один", L"из", L"самый")
 };
 
+#ifdef PROFILING
 profiler record_feature_profiler("record feature");
+#endif
 typedef std::unordered_map<std::wstring, float> features_dict;
 /*
 inline void record_feature(features_dict& features, std::initializer_list<const std::wstring&> l, float value = 1) {
@@ -173,8 +176,9 @@ inline void record_feature(features_dict& features, std::initializer_list<const 
     }
 }
 /*inline */void record_feature(features_dict& features, const std::wstring& s1, const std::wstring& s2, float value = 1) {
-
+#ifdef PROFILING
     profiler_guard guard(record_feature_profiler);
+#endif
 
     std::wstring feature;
     feature.reserve(s1.length() + 1 + s2.length() + 1);
@@ -184,8 +188,9 @@ inline void record_feature(features_dict& features, std::initializer_list<const 
     record_feature(features, feature, value);
 }
 /*inline */void record_feature(features_dict& features, const std::wstring& s1, const std::wstring& s2, const std::wstring& s3, float value = 1) {
-
+#ifdef PROFILING
     profiler_guard guard(record_feature_profiler);
+#endif
 
     std::wstring feature;
     feature.reserve(s1.length() + 1 + s2.length() + 1 + s3.length() + 1);
@@ -197,8 +202,9 @@ inline void record_feature(features_dict& features, std::initializer_list<const 
     record_feature(features, feature, value);
 }
 /*inline */void record_feature(features_dict& features, const std::wstring& s1, const std::wstring& s2, const std::wstring& s3, const std::wstring& s4, float value = 1) {
-
+#ifdef PROFILING
     profiler_guard guard(record_feature_profiler);
+#endif
 
     std::wstring feature;
     feature.reserve(s1.length() + 1 + s2.length() + 1 + s3.length() + 1 + s4.length() + 1);
@@ -228,9 +234,13 @@ inline void test_leters(const std::wstring& str, bool& russian, bool& english) {
     return;
 }
 
+#ifdef PROFILING
 profiler letters_profiler("letters");
+#endif
 inline bool contains_russian(const std::wstring& str) {
+#ifdef PROFILING
     profiler_guard guard(letters_profiler);
+#endif
 
     for (std::size_t i = 0; i < str.length(); ++i) {
         //if ((str[i] >= L'а' and str[i] <= L'я') or str[i] == L'ё') return true;
@@ -241,7 +251,9 @@ inline bool contains_russian(const std::wstring& str) {
 }
 
 inline bool contains_english(const std::wstring& str) {
+#ifdef PROFILING
     profiler_guard guard(letters_profiler);
+#endif
 
     for (std::size_t i = 0; i < str.length(); ++i) {
         //if (str[i] >= L'a' and str[i] <= L'z') return true;
@@ -250,9 +262,13 @@ inline bool contains_english(const std::wstring& str) {
     return false;
 }
 
+#ifdef PROFILING
 profiler pos_profiler("pos");
+#endif
 inline bool extract_pos(const std::wstring& info, std::wstring& pos, std::wstring& grammatical_info) {
+#ifdef PROFILING
     profiler_guard guard(pos_profiler);
+#endif
 
     auto pos_pos = info.find(L'=');
     if (pos_pos == info.npos) return false;
@@ -267,11 +283,6 @@ inline bool extract_pos(const std::wstring& info, std::wstring& pos, std::wstrin
     grammatical_info = info.substr(grammatical_info_pos + 1, end - grammatical_info_pos - 1);
 
     return true;
-}
-
-template<typename Container, typename Elem>
-inline bool contains(const Container& container, const Elem& elem) {
-    return container.find(elem) != container.end();
 }
 
 inline std::wstring extract_lexeme(const std::wstring& info) {
@@ -292,16 +303,21 @@ inline bool is_12person(const std::wstring& info) {
     return info.find(L"1-л") != info.npos or info.find(L"2-л") != info.npos;
 }
 
-
+#ifdef PROFILING
 profiler split_profiler("split to form and info");
 profiler pos_checks_profiler("pos record");
+#endif
 std::unordered_set<std::wstring> ignore_pos = {L"CONJ", L"INTJ", L"PART", L"PR"};
-void extract_features_from_word(features_dict& features, std::wstring& word, std::vector<std::wstring> sequence) {
+void extract_features_from_word(features_dict& features, std::wstring& word, std::vector<std::wstring>& sequence) {
+#ifdef PROFILING
     profiler_guard first_half_guard(first_half);
+#endif
 
     std::wstring form, info;
     {
+#ifdef PROFILING
         profiler_guard guard(split_profiler);
+#endif
 
         auto pos = word.find(L'{');
         //std::wcout << '"' << word << '"' << word.length() << std::endl;
@@ -332,10 +348,14 @@ void extract_features_from_word(features_dict& features, std::wstring& word, std
         return;
     }
 
+#ifdef PROFILING
     first_half_guard.stop();
+#endif
 
     {
+#ifdef PROFILING
         profiler_guard guard(pos_checks_profiler);
+#endif
         //record_feature(features, {L"POS%", pos});
         record_feature(features, L"POS%", pos);
     }
@@ -345,8 +365,10 @@ void extract_features_from_word(features_dict& features, std::wstring& word, std
         return;
     }
 
+#ifdef PROFILING
     profiler_guard second_half_guard(second_half, false);
     second_half_guard.start();
+#endif
 
     auto lexeme = extract_lexeme(info);
     assert(not lexeme.empty());
@@ -359,7 +381,7 @@ void extract_features_from_word(features_dict& features, std::wstring& word, std
         record_feature(features, L"длинное слово%");
     }
 
-    if (::contains(one_grams, lexeme)) {
+    if (one_grams.count(lexeme) > 0) {
         record_feature(features, lexeme, grammatical_info);
     }
 
@@ -373,7 +395,7 @@ void extract_features_from_word(features_dict& features, std::wstring& word, std
     }
 }
         
-void extract_features_from_sequence(features_dict& features, std::vector<std::wstring> sequence) {
+void extract_features_from_sequence(features_dict& features, std::vector<std::wstring>& sequence) {
     features[L"length"] = sequence.size();
     for (auto& kv : features) {
         if (kv.first.find(L'%') != std::wstring::npos) {
@@ -382,10 +404,10 @@ void extract_features_from_sequence(features_dict& features, std::vector<std::ws
     }
 
     for (std::size_t i = 1; i < sequence.size(); ++i) {
-        if (::contains(two_grams, std::make_tuple(sequence[i-1], sequence[i]))) {
+        if (two_grams.count(std::make_tuple(sequence[i-1], sequence[i])) > 0) {
             record_feature(features, L"2gram", sequence[i-1], sequence[i]);
         }
-        if (i > 1 and ::contains(three_grams, std::make_tuple(sequence[i-2], sequence[i-1], sequence[i]))) {
+        if (i > 1 and three_grams.count(std::make_tuple(sequence[i-2], sequence[i-1], sequence[i])) > 0) {
             record_feature(features, L"3gram", sequence[i-2], sequence[i-1], sequence[i]);
         };
     }

@@ -64,10 +64,13 @@ void handle_bz_error(int bzerror, const char* function, const std::string& info 
     }
 }
 
-
+#ifdef PROFILING
 profiler bz_readline_profiler("bz2 readline");
+#endif
 std::wstring_convert<std::codecvt_utf8<wchar_t>, wchar_t> ucs2conv;
 struct bzfile_wrapper {
+
+    static std::map<std::string, std::pair<void*, std::size_t> > loaded_files;
 
     bzfile_wrapper(const std::string& filename) {
         assert(boost::filesystem::exists(filename.c_str()));
@@ -102,7 +105,9 @@ struct bzfile_wrapper {
     }
     
     bool readline(std::wstring& result) {
+#ifdef PROFILING
         profiler_guard guard(bz_readline_profiler);
+#endif
 
         auto pos = std::find(start, start + size, '\n');
         while (pos == start + size and bzfile != nullptr) {
@@ -177,6 +182,7 @@ struct bzfile_wrapper {
     std::size_t capacity;
     std::size_t size;
 };
+std::map<std::string, std::pair<void*, std::size_t> > bzfile_wrapper::loaded_files;
 
 namespace std {
 
@@ -233,7 +239,14 @@ features_dict extract_features_from_file(const std::string& filename, std::funct
     uint32_t sample_number = 0;
     features_dict sample_features;
     std::vector<std::wstring> word_sequence;
-    /*
+
+
+#ifdef PROFILING
+    profiler end_profiler(filename + " sequence");
+    profiler word_profiler(filename + " word");
+#endif
+
+    /* */
     bound_queue<std::wstring, 10000> lines_queue;
     std::thread reader_thread(bzfile_reader,
                filename,
@@ -241,18 +254,20 @@ features_dict extract_features_from_file(const std::string& filename, std::funct
 
     std::wstring line = lines_queue.pop();
     while(line.length() > 0) {
-    */
+    /* */
+
+
+    /*
     bzfile_wrapper file(filename);
-
-    profiler end_profiler(filename + " sequence");
-    profiler word_profiler(filename + " word");
-
-
     std::wstring line;
     while(std::getline(file, line)) {
         assert(line.length() > 0);
+    */
+
         if (boost::starts_with(line, L"samplesSeparator")) {
+#ifdef PROFILING
             profiler_guard guard(end_profiler);
+#endif
 
             extract_features_from_sequence(sample_features, word_sequence);
 
@@ -270,14 +285,17 @@ features_dict extract_features_from_file(const std::string& filename, std::funct
             word_sequence.clear();
             sample_features.clear();
         } else {
+#ifdef PROFILING
             profiler_guard guard(word_profiler);
+#endif
 
             extract_features_from_word(sample_features, line, word_sequence);
         }
 
-        //line = lines_queue.pop();
+
+        line = lines_queue.pop();
     }
-    //reader_thread.join();
+    reader_thread.join();
 
     return features_counts;
 }
@@ -295,17 +313,15 @@ features_indexes_t compute_features_indexes(const std::string& featured_samples_
                                             const std::string& ads_samples_file) {
     std::vector<std::future<features_dict>> per_file_features_counts;
 
-    /*
     uint32_t shift = 0;
     for (auto i = 0U; i < featured_samples_counts.size(); ++i) {
         per_file_features_counts.push_back(
                     std::async(std::launch::async, extract_features_from_file,
                                (boost::format(featured_samples_file) % i).str(),
-                               [&featured_test_samples, shift] (int i) { return not contains(featured_test_samples, shift + i); })
+                               [&featured_test_samples, shift] (int i) { return featured_test_samples.count(shift + i) == 0; })
                     );
         shift += featured_samples_counts[i];
     }
-    */
 
     features_dict features_counts = extract_features_from_file(ads_samples_file, [] (int) { return true; });
 
@@ -388,7 +404,7 @@ void split_featured(csr_matrix_t& ads_matrix, csr_matrix_t& wiki_ads_matrix, csr
     featured_matrix.indptr.push_back(featured_matrix.indices.size());
 
     for (std::size_t i = 0; i < featured_matrix.indptr.size() - 1; ++i) {
-        csr_matrix_t& dst = contains(featured_test_samples, shift + i)? wiki_ads_matrix : ads_matrix;
+        csr_matrix_t& dst = featured_test_samples.count(shift + i) > 0? wiki_ads_matrix : ads_matrix;
         dst.indptr.push_back(dst.indices.size());
 
         auto start = featured_matrix.indptr[i];
@@ -420,7 +436,7 @@ int main(int argc, char** argv)
             num_featured_samples_files += 1;
         }
     }
-    num_featured_samples_files = 1; // FIXME
+    num_featured_samples_files = 4; // FIXME
 
 
     auto wiki_ads_samples_count = count_samples("../step1/data/output/ads-samples.index.txt");
