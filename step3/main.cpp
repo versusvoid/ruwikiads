@@ -246,7 +246,7 @@ features_dict extract_features_from_file(const std::string& filename, std::funct
     profiler word_profiler(filename + " word");
 #endif
 
-    /* */
+    /* * /
     bound_queue<std::wstring, 10000> lines_queue;
     std::thread reader_thread(bzfile_reader,
                filename,
@@ -254,7 +254,7 @@ features_dict extract_features_from_file(const std::string& filename, std::funct
 
     std::wstring line = lines_queue.pop();
     while(line.length() > 0) {
-    /* */
+    / * */
 
 
     /*
@@ -263,6 +263,13 @@ features_dict extract_features_from_file(const std::string& filename, std::funct
     while(std::getline(file, line)) {
         assert(line.length() > 0);
     */
+
+    std::shared_ptr<FILE> bunzip2(POPEN(("bunzip2 -c -k " + filename).c_str(), "r"), PCLOSE);
+    size_t len = 2048;
+    char* buf = (char*)malloc(len);
+    std::wstring line;
+    while(std::getline(&buf, &len, bunzip2.get(), line)) {
+        assert(line.length() > 0);
 
         if (boost::starts_with(line, L"samplesSeparator")) {
 #ifdef PROFILING
@@ -293,9 +300,9 @@ features_dict extract_features_from_file(const std::string& filename, std::funct
         }
 
 
-        line = lines_queue.pop();
+        //line = lines_queue.pop();
     }
-    reader_thread.join();
+    //reader_thread.join();
 
     return features_counts;
 }
