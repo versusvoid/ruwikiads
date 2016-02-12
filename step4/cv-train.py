@@ -17,7 +17,7 @@ def load_set(which='train'):
 
 def load_mat(which='train'):
     d = xgb.DMatrix('../step3/data/output/{}-set.dmatrix.bin'.format(which))
-    print(which, 'set has size', '{}x{}'.format(d.num_row(), d.num_row()))
+    #print(which, 'set has size', '{}x{}'.format(d.num_row(), d.num_row()))
     return d
 
 bst = None
@@ -32,12 +32,12 @@ else:
     #dtrain = load_mat()
     dtrain = load_mat('test')
     label = dtrain.get_label()
-    print(label.shape, type(label))
-    print(sum(label[0:601]), label[601])
+    #print(label.shape, type(label))
+    #print(sum(label[0:601]), label[601])
 
     num_rounds=75
     #params = {'max_depth':4, 'eta':0.1, 'subsample':0.5, 'lambda':10, 'silent':1, 'objective':'binary:logistic' }
-    params = {'max_depth':6, 'eta':0.3, 'subsample':1.0, 'lambda':1, 'silent':1, 'objective':'binary:logistic' }
+    params = {'max_depth':6, 'eta':0.3, 'subsample':1.0, 'lambda':5, 'silent':1, 'objective':'binary:logistic'}
     if '-cv' in sys.argv:
         xgb.cv(params, dtrain, num_boost_round=num_rounds, nfold=10, show_progress=True)
         exit()
@@ -53,7 +53,7 @@ def test_on_set(which='train'):
     labels = dtest.get_label()
 
     predicted = bst.predict(dtest)
-    predicted = (predicted > 0.5).astype(int)
+    predicted = (predicted > 0.1).astype(int)
 
     #print('labels:', labels.shape, len(labels))
     #print('predicted:', predicted.shape, len(predicted))

@@ -4,16 +4,14 @@
 #include <vector>
 #include <algorithm>
 #include <iostream>
-#include <bzlib.h>
 #include <stdio.h>
 #include <chrono>
 #include <boost/algorithm/string.hpp>
 #include <boost/filesystem.hpp>
-#include <boost/program_options.hpp>
 #include <boost/format.hpp>
 #include <xgboost/c_api.h>
+
 #include "features.hpp"
-#include "blocking_queue.hpp"
 
 #include <stdio.h>  // for popen, pclose
 #if defined(_MSC_VER)
@@ -24,217 +22,34 @@
 # define PCLOSE pclose
 #endif
 
-void handle_bz_error(int bzerror, const char* function, const std::string& info = "") {
-    if (bzerror < 0) {
-        std::string error_name;
-        switch (bzerror) {
-
-            case BZ_SEQUENCE_ERROR:
-                error_name = "BZ_SEQUENCE_ERROR";
-                break;
-            case BZ_PARAM_ERROR:
-                error_name = "BZ_PARAM_ERROR";
-                break;
-            case BZ_MEM_ERROR:
-                error_name = "BZ_MEM_ERROR";
-                break;
-            case BZ_DATA_ERROR:
-                error_name = "BZ_DATA_ERROR";
-                break;
-            case BZ_DATA_ERROR_MAGIC:
-                error_name = "BZ_DATA_ERROR_MAGIC";
-                break;
-            case BZ_IO_ERROR:
-                error_name = "BZ_IO_ERROR";
-                break;
-            case BZ_UNEXPECTED_EOF:
-                error_name = "BZ_UNEXPECTED_EOF";
-                break;
-            case BZ_CONFIG_ERROR:
-                error_name = "BZ_CONFIG_ERROR";
-                break;
-            default:
-                error_name = "*unknown (" + std::to_string(bzerror) + ")*";
-                break;
-        }
-        std::wcerr << "bzip error: " << error_name.c_str() << " in function " << function << std::endl;
-        if (info.length() > 0)
-            std::wcerr << info.c_str() << std::endl;
-        std::exit(bzerror);
-    }
-}
-
-#ifdef PROFILING
-profiler bz_readline_profiler("bz2 readline");
-#endif
 std::wstring_convert<std::codecvt_utf8<wchar_t>, wchar_t> ucs2conv;
-struct bzfile_wrapper {
 
-    static std::map<std::string, std::pair<void*, std::size_t> > loaded_files;
-
-    bzfile_wrapper(const std::string& filename) {
-        assert(boost::filesystem::exists(filename.c_str()));
-
-        file = fopen(filename.c_str(), "r");
-        int bzerror;
-        bzfile = BZ2_bzReadOpen(&bzerror, file, 0, 0, nullptr, 0);
-        handle_bz_error(bzerror, "bzReadOpen", filename);
-
-        capacity = 1 << 18;
-        size = 0;
-        buf = new char[capacity];
-        start = buf;
-    }
-
-    ~bzfile_wrapper() {
-        delete[] buf;
-        buf = nullptr;
-        start = nullptr;
-        size = 0;
-        capacity = 0;
-        if (bzfile != nullptr) {
-            int bzerror;
-            BZ2_bzReadClose(&bzerror, bzfile);
-            handle_bz_error(bzerror, "bzReadClose");
-            bzfile = nullptr;
-        }
-        if (file != nullptr) {
-            fclose(file);
-            file = nullptr;
-        }
-    }
-    
-    bool readline(std::wstring& result) {
-#ifdef PROFILING
-        profiler_guard guard(bz_readline_profiler);
-#endif
-
-        auto pos = std::find(start, start + size, '\n');
-        while (pos == start + size and bzfile != nullptr) {
-            read_moar();
-            pos = std::find(start, start + size, '\n');
-        }
-        if (pos == start + size and size == 0) return  false;
-        
-        std::size_t len = pos - start;
-        result = ucs2conv.from_bytes(start, start + len);
-
-        start += len + 1;
-        size -= len + 1;
-        return true;
-    }
-
-    void read_moar() {
-        if ((start - buf) + size == capacity) {
-            if (start != buf) {
-                std::copy(start, start + size, buf);
-                start = buf;
-            }
-            else 
-            {
-                std::cerr << "Doubling buffer" << std::endl;
-                capacity *= 2;
-                char* old_buf = buf;
-                buf = new char[capacity];
-                std::copy(old_buf, old_buf + capacity, buf);
-                delete[] old_buf;
-                start = buf;
-            }
-        }
-
-        read();
-    }
-
-    void read() {
-        int max_len = capacity - size - (start - buf);
-        int bzerror;
-        int len = BZ2_bzRead(&bzerror, bzfile, start + size, max_len);
-        handle_bz_error(bzerror, "bzRead");
-        if (bzerror == BZ_STREAM_END) {
-            if (feof(file)) {
-                BZ2_bzReadClose(&bzerror, bzfile);
-                handle_bz_error(bzerror, "bzReadClose");
-                bzfile = nullptr;
-                fclose(file);
-                file = nullptr;    
-            } else {
-                void* unused = nullptr;
-                int nUnused = 0;
-                BZ2_bzReadGetUnused(&bzerror, bzfile, &unused, &nUnused);
-                handle_bz_error(bzerror, "bzReadGetUnused");
-                BZ2_bzReadClose(&bzerror, bzfile);
-                handle_bz_error(bzerror, "bzReadClose");
-                bzfile = BZ2_bzReadOpen(&bzerror, file, 0, 0, unused, nUnused);
-                handle_bz_error(bzerror, "bzReadOpen");
-            }
-        } 
-        size += len;
-    }
-
-    bool eof() const {
-        return bzfile == nullptr;
-    }
-
-    FILE* file;
-    BZFILE* bzfile;
-    char* buf;
-    char* start;
-    std::size_t capacity;
-    std::size_t size;
-};
-std::map<std::string, std::pair<void*, std::size_t> > bzfile_wrapper::loaded_files;
-
-namespace std {
-
-    inline bool getline(::bzfile_wrapper& bzfile, std::wstring& out) { return bzfile.readline(out); }
-    inline bool getline(char** lineptr, size_t* n, FILE* file, std::wstring& out) {
-        assert(*lineptr != nullptr);
-        auto len = getline(lineptr, n, file);
-        //if (len == ssize_t(-1) and not feof(file)) return false;
-        if (len == ssize_t(-1)) return false;
-        out = ucs2conv.from_bytes(*lineptr, *lineptr + len);
-        return true;
-    }
-
+inline bool getline(char** lineptr, size_t* n, FILE* file, std::wstring& out) {
+    assert(*lineptr != nullptr);
+    auto len = getline(lineptr, n, file);
+    //if (len == ssize_t(-1) and not feof(file)) return false;
+    if (len == ssize_t(-1)) return false;
+    out = ucs2conv.from_bytes(*lineptr, *lineptr + len);
+    return true;
 }
 
-template<typename FileObject>
-/*inline*/ uint32_t _count_samples(FileObject& file) {
+uint32_t count_samples(const std::string& filename) {
+
+    assert(boost::ends_with(filename, ".index.txt"));
+
+    std::wifstream file(filename);
     uint32_t count = 0;
     while (not file.eof()) {
         std::wstring line;
         std::getline(file, line);
         if (boost::starts_with(line, L"samplesSeparator")) {
             count += 1;
-            //if (count % 50000 == 0) std::wcout << "counted " << count << std::endl;
         }
     }
+
+    std::wcout << "counted " << count << " in " << filename.c_str() << std::endl;
     return count;
 }
-
-uint32_t count_samples(const std::string& filename) {
-    if (boost::ends_with(filename, ".bz2")) {
-        assert(false);
-//        bzfile_wrapper file(filename);
-//        return _count_samples(file);
-    } else {
-        auto file = std::wifstream(filename);
-        auto count = _count_samples(file);
-        std::wcout << "counted " << count << " in " << filename.c_str() << std::endl;
-        return count;
-    }
-}
-
-void bzfile_reader(const std::string& filename, bound_queue<std::wstring, 10000>* lines_queue) {
-    bzfile_wrapper file(filename);
-
-    std::wstring line;
-    while(std::getline(file, line)) {
-        lines_queue->push(line);
-    }
-    lines_queue->push(L"");
-}
-
 
 struct csr_matrix_t {
 
@@ -327,30 +142,12 @@ features_dict extract_features_from_file(const std::string& filename,
     profiler word_profiler(filename + " word");
 #endif
 
-    /* * /
-    bound_queue<std::wstring, 10000> lines_queue;
-    std::thread reader_thread(bzfile_reader,
-               filename,
-               &lines_queue);
-
-    std::wstring line = lines_queue.pop();
-    while(line.length() > 0) {
-    / * */
-
-
-    /*
-    bzfile_wrapper file(filename);
-    std::wstring line;
-    while(std::getline(file, line)) {
-        assert(line.length() > 0);
-    */
-
     std::shared_ptr<FILE> bunzip2(POPEN(("bunzip2 -c -k " + filename).c_str(), "r"), PCLOSE);
-    size_t len = 2<<16;
+    size_t len = 4096;
     char* buf = (char*)malloc(len  * sizeof(char));
     std::wstring line;
-    while(std::getline(&buf, &len, bunzip2.get(), line)) {
-        assert(line.length() > 0 and len == 2<<16);
+    while(getline(&buf, &len, bunzip2.get(), line)) {
+        assert(line.length() > 0);
 
         if (boost::starts_with(line, L"samplesSeparator")) {
 #ifdef PROFILING
@@ -374,9 +171,7 @@ features_dict extract_features_from_file(const std::string& filename,
 
             sample_number += 1;
             if (sample_number % 30000 == 0) {
-                std::wcout << "preprocess " << filename.c_str() << " " << sample_number << std::endl;
-
-                //free(buf); return features_counts; // FIXME
+                std::wcout << "feature extraction " << filename.c_str() << " " << sample_number << std::endl;
             }
             word_sequence.clear();
             sample_features.clear();
@@ -389,16 +184,13 @@ features_dict extract_features_from_file(const std::string& filename,
             extract_features_from_word(sample_features, line, word_sequence);
         }
 
-
-        //line = lines_queue.pop();
     }
     free(buf);
-    //reader_thread.join();
 
     return features_counts;
 }
 
-/*inline*/ void join_counts(features_dict& dest, const features_dict& source) {
+inline void join_counts(features_dict& dest, const features_dict& source) {
     for (auto& kv : source) {
         record_feature(dest, kv.first, kv.second);
     }
@@ -429,31 +221,31 @@ csr_matrix_t convert_features(csr_matrix_t& matrix,
     return result;
 }
 
-features_indexes_t compute_features_indexes(const std::string& featured_samples_file,
-                                            const std::vector<uint32_t>& featured_samples_counts,
-                                            std::vector<csr_matrix_t>& featured_matrices,
-                                            const std::unordered_set<uint32_t>& featured_test_samples,
+features_indexes_t compute_features_indexes(const std::string& non_ads_samples_file,
+                                            const std::vector<uint32_t>& non_ads_samples_counts,
+                                            std::vector<csr_matrix_t>& non_ads_matrices,
+                                            const std::unordered_set<uint32_t>& non_ads_test_samples,
                                             const std::string& ads_samples_file,
                                             csr_matrix_t& ads_matrix) {
 
-    assert(featured_samples_counts.size() == featured_matrices.size());
+    assert(non_ads_samples_counts.size() == non_ads_matrices.size());
     features_indexes_t temp_features_indexes;
     std::vector<std::future<features_dict>> per_file_features_counts;
 
-    std::wcout << "Running first featured half" << std::endl;
+    std::wcout << "Running first non ads half" << std::endl;
 
     uint32_t shift = 0;
-    for (auto i = 0U; i < std::min(4UL, featured_samples_counts.size()); ++i) {
+    for (auto i = 0U; i < std::min(4UL, non_ads_samples_counts.size()); ++i) {
 
         per_file_features_counts.push_back(
                     std::async(std::launch::async, extract_features_from_file,
-                               (boost::format(featured_samples_file) % i).str(),
-                               [&featured_test_samples, shift] (int i) { return featured_test_samples.count(shift + i) == 0; },
-                               &featured_matrices[i],
+                               (boost::format(non_ads_samples_file) % i).str(),
+                               [&non_ads_test_samples, shift] (int i) { return non_ads_test_samples.count(shift + i) == 0; },
+                               &non_ads_matrices[i],
                                &temp_features_indexes
                                )
                     );
-        shift += featured_samples_counts[i];
+        shift += non_ads_samples_counts[i];
     }
 
 
@@ -469,23 +261,23 @@ features_indexes_t compute_features_indexes(const std::string& featured_samples_
     }
 
 
-    std::wcout << "Running second featured half" << std::endl;
+    std::wcout << "Running second non ads half" << std::endl;
 
-    for (auto j = 4U; j < featured_samples_counts.size(); j += 4) {
+    for (auto j = 4U; j < non_ads_samples_counts.size(); j += 4) {
 
-        for (auto i = j; i < std::min(featured_samples_counts.size(), j + 4UL); ++i) {
+        for (auto i = j; i < std::min(non_ads_samples_counts.size(), j + 4UL); ++i) {
             per_file_features_counts.push_back(
                         std::async(std::launch::async, extract_features_from_file,
-                                   (boost::format(featured_samples_file) % i).str(),
-                                   [&featured_test_samples, shift] (int i) { return featured_test_samples.count(shift + i) == 0; },
-                                   &featured_matrices[i],
+                                   (boost::format(non_ads_samples_file) % i).str(),
+                                   [&non_ads_test_samples, shift] (int i) { return non_ads_test_samples.count(shift + i) == 0; },
+                                   &non_ads_matrices[i],
                                    &temp_features_indexes
                                    )
                         );
-            shift += featured_samples_counts[i];
+            shift += non_ads_samples_counts[i];
         }
 
-        for (auto i = j; i < std::min(featured_samples_counts.size(), j + 4UL); ++i) {
+        for (auto i = j; i < std::min(non_ads_samples_counts.size(), j + 4UL); ++i) {
 
             join_counts(features_counts, per_file_features_counts[i].get());
         }
@@ -500,9 +292,9 @@ features_indexes_t compute_features_indexes(const std::string& featured_samples_
         //}
     }
 
-    std::wcout << "Converting termporal features' indexes to final" << std::endl;
+    std::wcout << "Converting termporal features' indices to final" << std::endl;
 
-    for (auto& matrix : featured_matrices) {
+    for (auto& matrix : non_ads_matrices) {
         matrix = convert_features(matrix, features_transform);
     }
 
@@ -537,7 +329,7 @@ void get_matrix_from_file(const std::string& samples_file,
     size_t len = 4096;
     char* buf = (char*)malloc(len * sizeof(char));
     std::wstring line;
-    while(std::getline(&buf, &len, bunzip2.get(), line)) {
+    while(getline(&buf, &len, bunzip2.get(), line)) {
         assert(line.length() > 0);
 
         if (boost::starts_with(line, L"samplesSeparator")) {
@@ -555,7 +347,6 @@ void get_matrix_from_file(const std::string& samples_file,
             sample_number += 1;
             if (sample_number % 30000 == 0) {
                 std::wcout << samples_file.c_str() << " " << sample_number << std::endl;
-                //return; // FIXME
             }
             word_sequence.clear();
             sample_features.clear();
@@ -566,24 +357,24 @@ void get_matrix_from_file(const std::string& samples_file,
     free(buf);
 }
 
-void split_featured(csr_matrix_t& ads_matrix, csr_matrix_t& wiki_ads_matrix,
-                    csr_matrix_t& featured_matrix,
-                    const std::unordered_set<uint32_t>& featured_test_samples,
+void split_non_ads(csr_matrix_t& ads_matrix, csr_matrix_t& wiki_ads_matrix,
+                    csr_matrix_t& non_ads_matrix,
+                    const std::unordered_set<uint32_t>& non_ads_test_samples,
                     uint32_t shift) {
 
-    featured_matrix.indptr.push_back(featured_matrix.indices.size());
+    non_ads_matrix.indptr.push_back(non_ads_matrix.indices.size());
 
-    for (std::size_t i = 0; i < featured_matrix.indptr.size() - 1; ++i) {
+    for (std::size_t i = 0; i < non_ads_matrix.indptr.size() - 1; ++i) {
 
-        csr_matrix_t& dst = featured_test_samples.count(shift + i) > 0? wiki_ads_matrix : ads_matrix;
+        csr_matrix_t& dst = non_ads_test_samples.count(shift + i) > 0? wiki_ads_matrix : ads_matrix;
         dst.indptr.push_back(dst.indices.size());
         dst.labels.push_back(0.0);
 
-        auto start = featured_matrix.indptr.at(i);
-        auto end = featured_matrix.indptr.at(i + 1);
+        auto start = non_ads_matrix.indptr.at(i);
+        auto end = non_ads_matrix.indptr.at(i + 1);
         for(bst_ulong j = start; j < end; ++j) {
-            dst.indices.push_back(featured_matrix.indices.at(j));
-            dst.data.push_back(featured_matrix.data.at(j));
+            dst.indices.push_back(non_ads_matrix.indices.at(j));
+            dst.data.push_back(non_ads_matrix.data.at(j));
         }
     }
 }
@@ -593,221 +384,121 @@ int main(int argc, char** argv)
 {
     std::locale::global(std::locale(std::locale(""), "C", std::locale::numeric));
     std::wcout.imbue(std::locale());
-    //std::cout.imbue(std::locale());
 
-    std::string featured_samples_file = "../step1/data/output/featured-samples.%d.stemmed.txt.bz2";
-    std::string featured_index_file = "../step1/data/output/featured-samples.%d.index.txt";
+    std::string non_ads_samples_file = "../step1/data/output/featured-samples.%d.stemmed.txt.bz2";
+    std::string non_ads_index_file = "../step1/data/output/featured-samples.%d.index.txt";
     std::string wiki_ads_samples_file = "../step1/data/output/ads-samples.stemmed.txt.bz2";
     std::string ads_samples_file = "../step2/data/output/yaca-ads.stemmed.txt.bz2";
 
-    uint32_t num_featured_samples_files = 0;
+    uint32_t num_non_ads_samples_files = 0;
     for (auto&& x : boost::filesystem::directory_iterator("../step1/data/output/")) {
         auto filename = x.path().filename().string();
         if (boost::starts_with(filename, "featured-samples.") and
                 boost::ends_with(filename, ".stemmed.txt.bz2")) {
-            num_featured_samples_files += 1;
+            num_non_ads_samples_files += 1;
         }
     }
-    //num_featured_samples_files = 2; // FIXME
 
 
     auto wiki_ads_samples_count = count_samples("../step1/data/output/ads-samples.index.txt");
     auto ads_samples_count = count_samples("../step2/data/output/yaca-ads.index.txt");
 
 
-    std::vector<uint32_t> featured_samples_counts;
-    uint32_t total_featured_samples_count = 0, featured_test_samples_count = 0;
-    std::unordered_set<uint32_t> featured_test_samples;
-    features_indexes_t features_indexes;
-    csr_matrix_t ads_matrix;
-    std::vector<csr_matrix_t> featured_matrices;
-    featured_matrices.reserve(num_featured_samples_files);
 
 
-    po::variables_map vm;
+
+    std::wcout << "Counting non ads samples" << std::endl;
+
+    std::vector<uint32_t> non_ads_samples_counts;
+    uint32_t total_non_ads_samples_count = 0;
+
+    std::vector<csr_matrix_t> non_ads_matrices;
+    non_ads_matrices.reserve(num_non_ads_samples_files);
     {
-        po::options_description desc("Options");
-        desc.add_options()
-                ("update,u", "update features indexes");
-
-        po::store(po::parse_command_line(argc, argv, desc), vm);
-        po::notify(vm);
+        std::vector<std::future<uint32_t>> counts;
+        for (auto i = 0U; i < num_non_ads_samples_files; ++i) {
+            counts.push_back(std::async(std::launch::async, count_samples, (boost::format(non_ads_index_file) % i).str()));
+            //counts.push_back(std::async(std::launch::async, count_samples, (boost::format(non_ads_samples_file) % i).str()));
+        }
+        for (auto&& count : counts) {
+            non_ads_samples_counts.push_back(count.get());
+            total_non_ads_samples_count += non_ads_samples_counts.back();
+            non_ads_matrices.emplace_back(non_ads_samples_counts.back());
+        }
     }
-    if (not boost::filesystem::exists("data/output/features-indexes.txt") or vm.count("update") > 0) {
-        std::wcout << "Updating features indexes" << std::endl;
-        {
-            std::vector<std::future<uint32_t>> counts;
-            for (auto i = 0U; i < num_featured_samples_files; ++i) {
-                counts.push_back(std::async(std::launch::async, count_samples, (boost::format(featured_index_file) % i).str()));                
-                //counts.push_back(std::async(std::launch::async, count_samples, (boost::format(featured_samples_file) % i).str()));
-            }
-            for (auto&& count : counts) {
-                featured_samples_counts.push_back(count.get());
-                total_featured_samples_count += featured_samples_counts.back();
-                featured_matrices.emplace_back(featured_samples_counts.back());
-            }
+    std::wcout << "Featured samples counted: " << total_non_ads_samples_count << std::endl;
+    assert(total_non_ads_samples_count > ads_samples_count);
+
+
+    std::wcout << "Generating test samples indices" << std::endl;
+    uint32_t non_ads_test_samples_count = uint32_t(0.4 * total_non_ads_samples_count);
+    std::unordered_set<uint32_t> non_ads_test_samples;
+    {
+        std::random_device r;
+        std::mt19937 e(r());
+        std::uniform_int_distribution<uint32_t> uniform_dist(0, total_non_ads_samples_count - 1);
+
+        while (non_ads_test_samples.size() < non_ads_test_samples_count) {
+            non_ads_test_samples.insert(uniform_dist(e));
         }
-        std::wcout << "Featured samples counted: " << total_featured_samples_count << std::endl;
-        //std::exit(1);
-        assert(total_featured_samples_count > ads_samples_count);
-
-        featured_test_samples_count = uint32_t(0.4 * total_featured_samples_count);
-        {
-            std::random_device r;
-            std::mt19937 e(r());
-            std::uniform_int_distribution<uint32_t> uniform_dist(0, total_featured_samples_count - 1);
-
-            while (featured_test_samples.size() < featured_test_samples_count) {
-                featured_test_samples.insert(uniform_dist(e));
-            }
-        }
-
-        ads_matrix = csr_matrix_t(ads_samples_count + total_featured_samples_count - featured_test_samples_count);
-
-        {
-            std::ofstream featured_test_samples_file("data/output/featured-test-samples.txt");
-            for(auto i = 0U; i < featured_samples_counts.size(); ++i) {
-                featured_test_samples_file << std::to_string(featured_samples_counts[i]);
-                if (i < featured_samples_counts.size() - 1)
-                    featured_test_samples_file << ',';
-            }
-            featured_test_samples_file << std::endl;
-            featured_test_samples_file << std::to_string(total_featured_samples_count) << ',' << std::to_string(featured_test_samples_count) << std::endl;
-
-            for (auto& k : featured_test_samples) {
-                featured_test_samples_file << std::to_string(k) << std::endl;
-            }
-            featured_test_samples_file.close();
-        }
-
-        std::wcout << "recorded featured test samples" << std::endl;
-
-        features_indexes = compute_features_indexes(featured_samples_file,
-                                                    featured_samples_counts,
-                                                    featured_matrices,
-                                                    featured_test_samples,
-                                                    ads_samples_file,
-                                                    ads_matrix);
-
-        std::wcout << "features indexes computed" << std::endl;
-
-        {
-            std::wofstream f("data/output/features-indexes.txt");
-            for (auto& kv : features_indexes) {
-                assert(kv.first.find(L':') == kv.first.npos);
-                f << kv.first << L":" << std::to_wstring(kv.second) << std::endl;
-            }
-            f.close();
-        }
-
-        std::wcout << "features indexes recorded" << std::endl;
-
-    } else {
-
-        std::wcout << "Loading features indexes" << std::endl;
-        {
-            std::ifstream featured_test_samples_file("data/output/featured-test-samples.txt");
-
-            std::string line;
-            std::getline(featured_test_samples_file, line);
-
-            std::vector<std::string> count_strings;            
-            boost::split(count_strings, line, boost::is_punct());
-            for (auto& count : count_strings) {
-                featured_samples_counts.push_back(std::stol(count));
-                featured_matrices.emplace_back(featured_samples_counts.back());
-            }
-            count_strings.clear();
-
-            std::getline(featured_test_samples_file, line);
-            boost::split(count_strings, line, boost::is_punct());
-
-            total_featured_samples_count = std::stol(count_strings[0]);
-            featured_test_samples_count = std::stol(count_strings[1]);
-
-            std::getline(featured_test_samples_file, line);
-            while (line.length() > 0) {
-                featured_test_samples.insert(std::stol(line));
-                std::getline(featured_test_samples_file, line);
-            }
-        }
-
-        ads_matrix = csr_matrix_t(ads_samples_count + total_featured_samples_count - featured_test_samples_count);
-
-        load_features_indexes(features_indexes);
-
-        std::wcout << features_indexes.size() << " features" << std::endl;
-
-
-
-        std::wcout << "Running first featured half" << std::endl;
-
-        std::vector<std::future<void>> async_featured_matrices;        
-        for (auto i = 0U; i < std::min(4UL, featured_samples_counts.size()); ++i) {
-            async_featured_matrices.push_back(
-                        std::async(std::launch::async,
-                                   get_matrix_from_file,
-                                   (boost::format(featured_samples_file) % i).str(),
-                                   &features_indexes,
-                                   &featured_matrices[i]
-                                   )
-                        );
-        }
-
-        get_matrix_from_file(ads_samples_file, &features_indexes, &ads_matrix);
-
-        for(auto& featured_matrix_future : async_featured_matrices) {
-            featured_matrix_future.get();
-        }
-
-        std::wcout << "Running second featured half" << std::endl;
-
-        for (auto j = 4U; j < featured_samples_counts.size(); j += 4) {
-
-            for (auto i = j; i < std::min(featured_samples_counts.size(), j + 4UL); ++i) {
-                async_featured_matrices.push_back(
-                            std::async(std::launch::async,
-                                       get_matrix_from_file,
-                                       (boost::format(featured_samples_file) % i).str(),
-                                       &features_indexes,
-                                       &featured_matrices[i]
-                                       )
-                            );
-            }
-
-
-            for (auto i = j; i < std::min(featured_samples_counts.size(), j + 4UL); ++i) {
-                async_featured_matrices[i].get();
-            }
-
-        }
-
     }
 
 
-    csr_matrix_t wiki_ads_matrix(wiki_ads_samples_count + featured_test_samples_count);
+    csr_matrix_t ads_matrix(ads_samples_count + total_non_ads_samples_count - non_ads_test_samples_count);
+    std::wcout << "Dumping test samples indices to file" << std::endl;
+    {
+        std::ofstream non_ads_test_samples_file("data/output/featured-test-samples.txt");
+
+        for (auto& k : non_ads_test_samples) {
+            non_ads_test_samples_file << std::to_string(k) << std::endl;
+        }
+        non_ads_test_samples_file.close();
+    }
+
+    std::wcout << "Computing feature indices" << std::endl;
+
+    auto features_indexes = compute_features_indexes(non_ads_samples_file,
+                                                non_ads_samples_counts,
+                                                non_ads_matrices,
+                                                non_ads_test_samples,
+                                                ads_samples_file,
+                                                ads_matrix);
+
+    std::wcout << "Feature indexes computed. Dumping to file." << std::endl;
+
+    {
+        std::wofstream f("data/output/features-indexes.txt");
+        for (auto& kv : features_indexes) {
+            assert(kv.first.find(L':') == kv.first.npos);
+            f << kv.first << L":" << std::to_wstring(kv.second) << std::endl;
+        }
+        f.close();
+    }
+
+
+    csr_matrix_t wiki_ads_matrix(wiki_ads_samples_count + non_ads_test_samples_count);
     get_matrix_from_file(wiki_ads_samples_file, &features_indexes, &wiki_ads_matrix);
 
     ads_matrix.labels.resize(ads_samples_count, 1.0);
     wiki_ads_matrix.labels.resize(wiki_ads_samples_count, 1.0);
 
+    std::wcout << "Splitting non-ads samples to test and train set" << std::endl;
+
     uint32_t shift = 0;
-    for (auto i = 0U; i < featured_matrices.size(); ++i) {
-        split_featured(ads_matrix, wiki_ads_matrix, featured_matrices[i], featured_test_samples, shift);
-        shift += featured_samples_counts[i];
+    for (auto i = 0U; i < non_ads_matrices.size(); ++i) {
+        split_non_ads(ads_matrix, wiki_ads_matrix, non_ads_matrices[i], non_ads_test_samples, shift);
+        shift += non_ads_samples_counts[i];
     }
 
 
     ads_matrix.indptr.push_back(ads_matrix.indices.size());
     wiki_ads_matrix.indptr.push_back(wiki_ads_matrix.indices.size());
 
-    std::wcout << "ads_matrix: " << ads_matrix.indptr.size() << " " <<  ads_matrix.labels.size() << std::endl;
-    std::wcout << "wiki_ads_matrix: " << wiki_ads_matrix.indptr.size() << " " <<  wiki_ads_matrix.labels.size() << std::endl;
     assert(ads_matrix.indptr.size() == ads_matrix.labels.size() + 1);
     assert(wiki_ads_matrix.indptr.size() == wiki_ads_matrix.labels.size() + 1);
 
 
-    //std::cerr << "Exiting at " << __LINE__ << std::endl; std::exit(1);
+    std::wcout << "Dumping test and train sets to disk" << std::endl;
 
 
     DMatrixHandle train_set;

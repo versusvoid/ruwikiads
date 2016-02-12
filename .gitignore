@@ -6,3 +6,5 @@ __pycache__
 *.bz2
 .*.sw*
 *.xml
+a.out
+data
