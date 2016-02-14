@@ -18,3 +18,5 @@ a.out: main.cpp features.hpp
 		-Wl,-Bstatic -lxgboost -lrabit -ldmlc -Wl,-Bdynamic \
 		-lgomp -lrt -lm -ldl \
 
+clean:
+	rm a.out

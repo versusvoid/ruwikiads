@@ -379,7 +379,6 @@ void split_non_ads(csr_matrix_t& ads_matrix, csr_matrix_t& wiki_ads_matrix,
     }
 }
 
-namespace po = boost::program_options;
 int main(int argc, char** argv)
 {
     std::locale::global(std::locale(std::locale(""), "C", std::locale::numeric));

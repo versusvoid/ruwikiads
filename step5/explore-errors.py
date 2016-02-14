@@ -9,14 +9,6 @@ import subprocess
 rc('font', family='Droid Sans')
 
 
-dtest = xgb.DMatrix('../step3/data/output/test-set.dmatrix.bin')
-
-ads = dtest.slice(list(range(601)))
-non_ads = dtest.slice(list(range(601, dtest.num_row())))
-del dtest
-
-bst = xgb.Booster(model_file='../step4/data/output/xgb.model')
-
 def load_titles(filename, titles_list):
     with open(filename, 'r') as f:
         title = []
@@ -27,17 +19,28 @@ def load_titles(filename, titles_list):
             else:
                 title.append(l.strip())
 
+ads_titles = []
+load_titles('../step1/data/output/ads-samples.index.txt', ads_titles)
+
+
+
+dtest = xgb.DMatrix('../step3/data/output/test-set.dmatrix.bin')
+ads = dtest.slice(list(range(len(ads_titles))))
+non_ads = dtest.slice(list(range(len(ads_titles), dtest.num_row())))
+del dtest
+
+bst = xgb.Booster(model_file='../step4/data/output/xgb.model')
+
 
 def explore_ads():
     predicted = list(enumerate(bst.predict(ads)))
     predicted.sort(key=lambda p: p[1])
 
-    ads_titles = []
-    load_titles('../step1/data/output/ads-samples.index.txt', ads_titles)
 
     assert len(ads_titles) == len(predicted)
     for i, p in predicted:
         print('Article "', ads_titles[i], '" is an ad with P = ', p, sep='')
+        subprocess.run(['chromium', 'https://ru.wikipedia.org/wiki/{}'.format(ads_titles[i])])
         try:
             input()
         except KeyboardInterrupt: break
@@ -48,8 +51,6 @@ def explore_non_ads():
 
     samples_indices = []
     with open('../step3/data/output/featured-test-samples.txt', 'r') as f:
-        f.readline()
-        f.readline()
         for l in f:
             samples_indices.append(int(l.strip()))
     samples_indices.sort()
@@ -73,10 +74,11 @@ def explore_non_ads():
             input()
         except KeyboardInterrupt: break
 
+#explore_ads()
 explore_non_ads()
 
 
-feature_names = [0]*(ads.num_col() + non_ads.num_col())
+feature_names = [0]*ads.num_col()
 feature_map = {}
 with open("../step3/data/output/features-indexes.txt", 'r') as f:
     for l in f:
@@ -87,7 +89,5 @@ with open("../step3/data/output/features-indexes.txt", 'r') as f:
 bst.feature_names = feature_names
 p = xgb.plot_importance(bst)
 p.figure.show()
-
-xgb.plot_tree(bst, num_trees=feature_map['вы'])
 
 show()

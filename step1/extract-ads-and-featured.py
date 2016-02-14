@@ -18,14 +18,20 @@ def get_wikitext(page_element):
     return page_element[start:end]
 
 # --------- ads ---------
-def extract_wiki_section(before, after):
-    i = before.rfind('==')
-    if i != -1: 
-        before = before[i + 2:]
+lower_bound_section_regexes = [regex.compile(r'(^|\s)={' + str(i) + r',}(\s|$)') if i > 0 else None for i in range(7)]
+upper_bound_section_regexes = [regex.compile(r'(^|\s)={1,' + str(i) + r'}(\s|$)') if i > 0 else None for i in range(7)]
 
-    i = after.find('==')
-    if i != -1: 
-        after = after[:i]
+def extract_wiki_section(before, after):
+    r_before = ''.join(reversed(before))
+    m = lower_bound_section_regexes[2].search(r_before)
+    sep_len = 2
+    if m is not None: 
+        sep_len = len(m.group(0).strip())
+        before = before[len(before) - m.start():]
+
+    m = upper_bound_section_regexes[sep_len].search(after)
+    if m is not None:
+        after = after[:m.start()]
 
     return '\n'.join([before, after])
 
@@ -37,7 +43,7 @@ def extract_ads(wikitext):
     before = wikitext[:m.start()]
     after = wikitext[m.end():]
 
-    cleared = WikiExtractor3.clear_wikitext(before).strip()
+    cleared = WikiExtractor3.clear_wikitext(before)
     if len(cleared) == 0:
         return WikiExtractor3.clear_wikitext(after)
 
@@ -144,7 +150,13 @@ with bz2.open('data/input/ruwiki-20151226-pages-articles-multistream.xml.bz2', '
 
                 pageElement = ''.join(pageParts)
                 if ads_regex.search(pageElement):
-                    writing_queue.put((pageTitle, extract_ads(get_wikitext(pageElement)), ads_files))
+                    text = extract_ads(get_wikitext(pageElement))
+                    if len(text) < 100:
+                        print('Too small ads text in ', pageTitle, ':', sep='', file=sys.stderr)
+                        print(text, file=sys.stderr)
+                        #input()
+                    else:
+                        writing_queue.put((pageTitle, text, ads_files))
 
                 else:
 

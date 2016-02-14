@@ -38,6 +38,7 @@ Cleans wiki-formatted text
 
 import regex
 from html import unescape
+from itertools import zip_longest
 
 # ===========================================================================
 
@@ -534,6 +535,7 @@ def compact(text):
     page = []  # list of paragraph
     headers = {}  # Headers for unfilled sections
     emptySection = False  # empty sections are discarded
+    listLevel = [] # nesting of lists
 
     for line in text.split('\n'):
 
@@ -553,6 +555,7 @@ def compact(text):
                 if i > lev:
                     del headers[i]
             emptySection = True
+            listLevel = []
             continue
         # Handle page title
         if line.startswith('++'):
@@ -567,7 +570,32 @@ def compact(text):
             continue
         # handle lists
         elif line[0] in '*#;:':
-            continue
+            i = 0
+            # c: current level char
+            # n: next level char
+            for c, n in zip_longest(listLevel, line, fillvalue=''):
+                if not n or n not in '*#;:': # shorter or different
+                    if c:
+                        listLevel = listLevel[:-1]
+                        continue
+                    else:
+                        break
+                # n != ''
+                if c != n and (not c or (c not in ';:' and n not in ';:')):
+                    if c:
+                        # close level
+                        listLevel = listLevel[:-1]
+                    listLevel += n
+                i += 1
+            n = line[i - 1]  # last list char
+            line = line[i:].strip()
+            if line:  # FIXME: n is '"'
+                # FIXME: use item count for #-lines
+                bullet = '1. ' if n == '#' else '- '
+                page.append('{0:{1}s}'.format(bullet, len(listLevel)) + line)
+        elif len(listLevel):
+            page.append(line)
+            listLevel = []
 
         # Drop residuals of lists
         elif line[0] in '{|' or line[-1] == '}':
@@ -591,7 +619,7 @@ def compact(text):
 def clear_wikitext(wikitext):
     text = clean(wikitext)
     text = compact(text)
-    return '\n'.join(text) 
+    return '\n'.join(text).strip()
 
 def split_article(wikitext):
     result = []
@@ -600,7 +628,7 @@ def split_article(wikitext):
         section_text = wikitext[start:match.start(0)]
         start = match.end(0)
         if len(section_text) < 100: continue
-        section_text = clear_wikitext(section_text)
+        section_text = clear_wikitext(section_text).strip()
         if len(section_text) > 100:
             result.append(section_text)
 

@@ -37,12 +37,13 @@ else:
 
     num_rounds=75
     #params = {'max_depth':4, 'eta':0.1, 'subsample':0.5, 'lambda':10, 'silent':1, 'objective':'binary:logistic' }
-    params = {'max_depth':6, 'eta':0.3, 'subsample':1.0, 'lambda':5, 'silent':1, 'objective':'binary:logistic'}
+    params = {'max_depth':6, 'eta':0.3, 'subsample':1.0, 'lambda':6, 'silent':1, 'objective':'binary:logistic'}
     if '-cv' in sys.argv:
         xgb.cv(params, dtrain, num_boost_round=num_rounds, nfold=10, show_progress=True)
         exit()
     else:
         bst = xgb.train(params, dtrain, num_boost_round=num_rounds, evals=[(dtrain,'train')])
+        #xgb.train(params, dtest, num_boost_round=num_rounds, evals=[(dtrain,'train'), (dtest, 'test')], xgb_model=bst)
         bst.save_model('data/output/xgb.model')
 
 def test_on_set(which='train'):
