@@ -4,9 +4,10 @@ all: a.out
 
 # \
 	g++ --std=c++14 -g3 -ggdb3 -pthread -Wall \
+	g++ --std=c++14 -O3 -pthread -Wall \
 
 
-a.out: main.cpp features.hpp
+a.out: main.cpp features.hpp Makefile
 	g++ --std=c++14 -O3 -pthread -Wall \
 		main.cpp \
 		-I/home/versus/tmp/xgboost/include \
