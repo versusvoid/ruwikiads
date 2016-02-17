@@ -509,13 +509,21 @@ std::string make_output_directory() {
     return output_directory;
 }
 
-void output_index(std::vector<std::wstring>& index, const std::string& filename) {
+void output_index(csr_matrix_t& set, const std::string& filename) {
 
     std::shared_ptr<FILE> bzip2(POPEN(("bzip2 -9 > " + filename).c_str(), "w"), PCLOSE);
-    for (auto& source : index) {
-        auto buf = ucs2conv.to_bytes(source);
+    std::array<std::string, 2> labels = { "0", "1" };
+
+    const char* separator = "\nsamplesSeparator\n";
+    std::size_t separator_len = strlen(separator);
+
+    for(auto i = 0U; i < set.labels.size(); ++i)
+        auto& label = labels.at(int(set.labels.at(i)));
+        fwrite(label.c_str(), sizeof(char), label.length(), bzip2.get());
+        fwrite("\n", sizeof(char), 1, bzip2.get());
+        auto buf = ucs2conv.to_bytes(set.sources.at(i));
         fwrite(buf.data(), sizeof(char), buf.length(), bzip2.get());
-        fwrite("\nsamplesSeparator\n", sizeof(char), strlen("\nsamplesSeparator\n"), bzip2.get());
+        fwrite(separator, sizeof(char), separator_len, bzip2.get());
     }
 }
 
@@ -611,7 +619,7 @@ int main(int argc, char** argv)
     XGDMatrixSetFloatInfo(xgb_test_set, "label", test_set.labels.data(), test_set.labels.size());
     XGDMatrixSaveBinary(xgb_test_set, (output_directory + "/test-set.dmatrix.bin").c_str(), 0);
     XGDMatrixFree(xgb_test_set);
-    output_index(test_set.sources, output_directory + "/test-set.index.txt.bz2");
+    output_index(test_set, output_directory + "/test-set.index.txt.bz2");
 
 
     DMatrixHandle xgb_train_set;
@@ -620,7 +628,7 @@ int main(int argc, char** argv)
     XGDMatrixSetFloatInfo(xgb_train_set, "label", train_set.labels.data(), train_set.labels.size());
     XGDMatrixSaveBinary(xgb_train_set, (output_directory + "/train-set.dmatrix.bin").c_str(), 0);
     XGDMatrixFree(xgb_train_set);
-    output_index(train_set.sources, output_directory + "/train-set.index.txt.bz2");
+    output_index(train_set, output_directory + "/train-set.index.txt.bz2");
 
     return 0;
 }
