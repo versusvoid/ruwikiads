@@ -517,7 +517,7 @@ void output_index(csr_matrix_t& set, const std::string& filename) {
     const char* separator = "\nsamplesSeparator\n";
     std::size_t separator_len = strlen(separator);
 
-    for(auto i = 0U; i < set.labels.size(); ++i)
+    for(auto i = 0U; i < set.labels.size(); ++i) {
         auto& label = labels.at(int(set.labels.at(i)));
         fwrite(label.c_str(), sizeof(char), label.length(), bzip2.get());
         fwrite("\n", sizeof(char), 1, bzip2.get());

@@ -19,7 +19,7 @@ def set_files_present(p):
          not (p / 'test-set.index.txt.bz2').exists() or
          not (p / 'features-indexes.txt').exists()):
 
-        print('Incomplete dataset: ', p, file=sys.stderr)
+        print('Incomplete dataset:', p, file=sys.stderr)
         return False
     return True
 datasets = list(filter(set_files_present, datasets))
@@ -31,6 +31,7 @@ if len(datasets) == 0:
     exit(1)
 elif len(datasets) == 1:
     dataset_dir = str(datasets[0])
+    print('Using', dataset_dir)
 else:
     print('Choose dataset:')
     for i, p in enumerate(datasets):
