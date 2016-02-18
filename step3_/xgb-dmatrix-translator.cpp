@@ -17,7 +17,7 @@
 #include <sys/stat.h>
 
 #define VECTOR_LENGTH 20
-#define NUM_FEATURES VECTOR_LENGTH*6
+#define NUM_FEATURES (VECTOR_LENGTH*8)
 #define SEPARATOR L"samplesSeparator"
 #define ADS_LABEL 1.0
 #define NON_ADS_LABEL 0.0
@@ -58,7 +58,7 @@ struct matrix_t {
 
 struct file_split_t {
 
-    file_split_t(const std::string& filename, float label, float split_ratio = 0.4)
+    file_split_t(const std::string& output_directory, const std::string& filename, float label, float split_ratio = 0.4)
         : filename(filename)
         , label(label)
     {
@@ -68,6 +68,9 @@ struct file_split_t {
         num_samples = sources.size();
         generate_split(split_ratio);
 
+        std::ofstream info(output_directory + "/info.txt", std::ios_base::app);
+        info << filename << " " << (1.0 - split_ratio) << ":" << split_ratio << std::endl;
+        info.close();
     }
 
     std::vector<std::wstring> load_sources() {
@@ -154,6 +157,8 @@ struct moments_data_t {
     std::array<double, VECTOR_LENGTH> sum_of_cubes;
     std::array<double, VECTOR_LENGTH> sum_of_bisquares;
     std::array<double, VECTOR_LENGTH> sum_of_reciprocal;
+    std::array<float, VECTOR_LENGTH> min;
+    std::array<float, VECTOR_LENGTH> max;
     //std::array<boost::multiprecision::number<boost::multiprecision::gmp_float<85000> >, VECTOR_LENGTH> product;
 
     void clear() {
@@ -164,13 +169,15 @@ struct moments_data_t {
             sum_of_cubes[i] = 0;
             sum_of_bisquares[i] = 0;
             sum_of_reciprocal[i] = 0;
+            min[i] = INFINITY;
+            max[i] = -INFINITY;
+
             //product[i] = 1.0;
         }
     }
 
     void update(std::array<float, VECTOR_LENGTH>& word_vector) {
         length += 1;
-        return; // FIXME
         for (auto i = 0; i < VECTOR_LENGTH; ++i) {
             double v = word_vector[i];
             sum[i] += v;
@@ -178,36 +185,43 @@ struct moments_data_t {
             sum_of_cubes[i] += v*v*v;
             sum_of_bisquares[i] += v*v*v*v;
             sum_of_reciprocal[i] += 1/v;
+            min[i] = std::min(min[i], v);
+            max[i] = std::max(max[i], v);
             //product[i] *= v;
         }
     }
     
     void finalize(matrix_t& matrix) {
-        assert(false);
         for (auto i = 0; i < VECTOR_LENGTH; ++i) {
-            float mean = float(sum[i] / length);
-            float mean_2 = float(sum_of_squares[i] / length);
-            float mean_3 = float(sum_of_cubes[i] / length);
-            float mean_4 = float(sum_of_bisquares[i] / length);
-            matrix.data.push_back(mean);
-            float mean_sqr = mean * mean;
-            float std = std::sqrt(float((sum_of_squares[i] - length*mean_sqr) / (length - 1)));
-            matrix.data.push_back(std);
-            float std_sqr = std*std;
-            float root_mean_square = std::sqrt(float(sum_of_squares[i] / length));
-            matrix.data.push_back(root_mean_square);
-            float mean_cube = mean_sqr * mean;
-            float mu3 = float((mean_3 - 3*mean_2*mean + 2*mean_cube) / length);
-            float std_cube = std_sqr * std;
-            matrix.data.push_back(mu3 / std_cube);
-            float mean_bisquare = mean_cube * mean;
-            float mu4 = float((mean_4 - 4*mean_3*mean + 6*mean_2*mean_sqr - 3 * mean_bisquare) / length);
-            float std_bisquare = std_cube * std;
-            matrix.data.push_back(mu4 / std_bisquare - 3.0);
+            double mean = sum[i] / length;
+            double mean_2 = sum_of_squares[i] / length;
+            double mean_3 = sum_of_cubes[i] / length;
+            double mean_4 = sum_of_bisquares[i] / length;
+            matrix.data.push_back(float(mean));
 
-            float harmonic_mean = float(length / sum_of_reciprocal[i]);
-            matrix.data.push_back(harmonic_mean);
+            double mean_sqr = mean * mean;
+            double std = std::sqrt((sum_of_squares[i] - length*mean_sqr) / (length - 1));
+            matrix.data.push_back(float(std));
 
+            double std_sqr = std*std;
+            double root_mean_square = std::sqrt(sum_of_squares[i] / length);
+            matrix.data.push_back(float(root_mean_square));
+
+            double mean_cube = mean_sqr * mean;
+            double mu3 = (mean_3 - 3*mean_2*mean + 2*mean_cube) / length;
+            double std_cube = std_sqr * std;
+            matrix.data.push_back(float(mu3 / std_cube));
+
+            double mean_bisquare = mean_cube * mean;
+            double mu4 = (mean_4 - 4*mean_3*mean + 6*mean_2*mean_sqr - 3 * mean_bisquare) / length;
+            double std_bisquare = std_cube * std;
+            matrix.data.push_back(float(mu4 / std_bisquare - 3.0));
+
+            double harmonic_mean = length / sum_of_reciprocal[i];
+            matrix.data.push_back(float(harmonic_mean));
+
+            matrix.data.push_back(min[i]);
+            matrix.data.push_back(max[i]);
             /*
             float geometric_mean = float(boost::multiprecision::pow(product[i], 1.0 / double(length)));
             matrix.data.push_back(geometric_mean);
@@ -253,6 +267,10 @@ void process_file(file_split_t* file_split,
                 moments.clear();
             }
             i += 1;
+            if (i % 30000 == 0) {
+                std::wcout << "feature extraction " << file_split->filename.c_str()
+                           << " " << i << std::endl;
+            }
         } else {
             auto p2 = word_end(line, p1 + 1);
             auto word = line.substr(p1 + 1, p2 - p1 - 1);
@@ -455,6 +473,10 @@ void output_features_index(const std::string& filename)
         j += 1;
         f << "harmonic_mean-" << std::to_wstring(i) << ':' << j << std::endl;
         j += 1;
+        f << "min-" << std::to_wstring(i) << ':' << j << std::endl;
+        j += 1;
+        f << "max-" << std::to_wstring(i) << ':' << j << std::endl;
+        j += 1;
     }
     assert(j == NUM_FEATURES);
     f.close();
@@ -479,11 +501,11 @@ int main(int argc, char** argv)
             num_non_ads_samples_files += 1;
         }
     }
-    num_non_ads_samples_files = 2;
+    num_non_ads_samples_files = 4;
 
 
-    file_split_t wiki_ads_file_split(wiki_ads_samples_file, ADS_LABEL, 0.0);
-    file_split_t ads_file_split(ads_samples_file, ADS_LABEL, 0.0);
+    file_split_t wiki_ads_file_split(output_directory, wiki_ads_samples_file, ADS_LABEL, 0.4);
+    file_split_t ads_file_split(output_directory, ads_samples_file, ADS_LABEL, 0.4);
 
 
     std::wcout << "Counting non ads samples" << std::endl;
@@ -491,9 +513,10 @@ int main(int argc, char** argv)
     std::vector<file_split_t> non_ads_file_splits;
     non_ads_file_splits.reserve(num_non_ads_samples_files);
     for (auto i = 0U; i < num_non_ads_samples_files; ++i) {
-        non_ads_file_splits.emplace_back((boost::format(non_ads_samples_file) % i).str(),
+        non_ads_file_splits.emplace_back(output_directory,
+                                         (boost::format(non_ads_samples_file) % i).str(),
                                          NON_ADS_LABEL,
-                                         0.0);
+                                         0.4);
     }
     std::wcout << "Non ads samples counted" << std::endl;
     std::wcout << "Dumping feature indices to file." << std::endl;
@@ -515,12 +538,12 @@ int main(int argc, char** argv)
 
     non_ads_file_splits.clear();
 
-    assert(test_set.labels.size() == test_set.sources.size() and
-           test_set.data.size() % NUM_FEATURES == 0 and
-           test_set.data.size() / NUM_FEATURES == test_set.labels.size());
-    assert(train_set.labels.size() == train_set.sources.size() and
-           train_set.data.size() % NUM_FEATURES == 0 and
-           train_set.data.size() / NUM_FEATURES == train_set.labels.size() );
+    assert(test_set.labels.size() == test_set.sources.size());
+    assert(test_set.data.size() % NUM_FEATURES == 0);
+    assert(test_set.data.size() / NUM_FEATURES == test_set.labels.size());
+    assert(train_set.labels.size() == train_set.sources.size());
+    assert(train_set.data.size() % NUM_FEATURES == 0);
+    assert(train_set.data.size() / NUM_FEATURES == train_set.labels.size());
 
 
     std::wcout << "Dumping test and train sets to disk" << std::endl;

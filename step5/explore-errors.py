@@ -98,6 +98,7 @@ def sanity_check(row_indices, label):
     indices = indices[0]
     assert np.all(row_indices == indices)
 
+IGNORE_WEB_PAGES = True
 def explore_samples(label):
     row_indices, titles = load_titles(label)
     sanity_check(row_indices, label)
@@ -110,6 +111,7 @@ def explore_samples(label):
     for p, title in predicted:
         if title.startswith('http'):
             print('Page at', title, 'is an ad with P =', p)
+            if IGNORE_WEB_PAGES: continue
             subprocess.run(['chromium', title])
         else:
             print('Article "', title, '" is an ad with P = ', p, sep='')

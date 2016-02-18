@@ -108,7 +108,7 @@ struct csr_matrix_t {
 
 struct file_split_t {
 
-    file_split_t(const std::string& filename, float label, float split_ratio = 0.4)
+    file_split_t(const std::string& output_directory, const std::string& filename, float label, float split_ratio = 0.4)
         : filename(filename)
         , label(label)
     {
@@ -118,6 +118,9 @@ struct file_split_t {
         num_samples = sources.size();
         generate_split(split_ratio);
 
+        std::ofstream info(output_directory + "/info.txt", std::ios_base::app);
+        info << filename << " " << (1.0 - split_ratio) << ":" << split_ratio << std::endl;
+        info.close();
     }
 
     std::vector<std::wstring> load_sources() {
@@ -504,7 +507,7 @@ std::string make_output_directory() {
 
 void output_index(csr_matrix_t& set, const std::string& filename) {
 
-    std::shared_ptr<FILE> bzip2(POPEN(("bzip2 -9 > " + filename).c_str(), "w"), PCLOSE);
+    std::shared_ptr<FILE> bzip2(popen(("bzip2 -9 > " + filename).c_str(), "w"), pclose);
     std::array<std::string, 2> labels = { "0", "1" };
 
     const char* separator = "\nsamplesSeparator\n";
@@ -553,8 +556,8 @@ int main(int argc, char** argv)
     num_non_ads_samples_files = 2;
 
 
-    file_split_t wiki_ads_file_split(wiki_ads_samples_file, ADS_LABEL, 0.0);
-    file_split_t ads_file_split(ads_samples_file, ADS_LABEL, 0.0);
+    file_split_t wiki_ads_file_split(output_directory, wiki_ads_samples_file, ADS_LABEL, 0.4);
+    file_split_t ads_file_split(output_directory, ads_samples_file, ADS_LABEL, 0.4);
 
 
     std::wcout << "Counting non ads samples" << std::endl;
@@ -562,9 +565,10 @@ int main(int argc, char** argv)
     std::vector<file_split_t> non_ads_file_splits;
     non_ads_file_splits.reserve(num_non_ads_samples_files);
     for (auto i = 0U; i < num_non_ads_samples_files; ++i) {
-        non_ads_file_splits.emplace_back((boost::format(non_ads_samples_file) % i).str(),
+        non_ads_file_splits.emplace_back(output_directory,
+                                         (boost::format(non_ads_samples_file) % i).str(),
                                          NON_ADS_LABEL,
-                                         0.0);
+                                         0.4);
     }
     std::wcout << "Non ads samples counted" << std::endl;
 

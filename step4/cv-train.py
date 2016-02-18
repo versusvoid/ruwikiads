@@ -9,6 +9,7 @@ from pathlib import Path
 import sys
 import re
 import datetime
+import itertools
 
 datasets = [p for p in Path('..').glob('step3*/data/output/*') 
                     if p.is_dir() and re.fullmatch('\d{4}-\d{2}-\d{2}-\d{2}-\d{2}', p.name)]
@@ -72,14 +73,46 @@ if dtrain.num_row() == 0:
     print('Empty', choice, 'set', file=sys.stderr)
     exit(3)
 
-num_rounds=150
+THRESHOLD = 0.1
+def PRF1(predicted, dmatrix):
+    labels = dmatrix.get_label()
+    predicted = (predicted > THRESHOLD).astype(int)
+    tp = sum(np.logical_and(predicted == 1, labels == 1).astype(int))
+    fp = sum(np.logical_and(predicted == 1, labels == 0).astype(int))
+    fn = sum(np.logical_and(predicted == 0, labels == 1).astype(int))
+    precision = tp / (tp + fp)
+    recall = tp / (tp + fn)
+    f1 = 2 * precision * recall / (precision + recall)
+
+    return [('f1', f1), ('recall', recall), ('precision', precision)]
+
+
 #params = {'max_depth':4, 'eta':0.1, 'subsample':0.5, 'lambda':10, 'silent':1, 'objective':'binary:logistic' }
-params = {'max_depth':6, 'eta':0.2, 'subsample':1.0, 'lambda':5, 'silent':1, 'objective':'binary:logistic'}
 if '-cv' in sys.argv:
-    xgb.cv(params, dtrain, num_boost_round=num_rounds, nfold=10, show_progress=True)
+    with open('data/output/cv-results.txt', 'w') as f:
+        print('Dataset:', dataset_dir, end='\n\n', file=f)
+        gridsearches = []
+        for num_rounds, max_depth, eta, subsample, xgb_lambda in itertools.product([50, 100, 150], [4,5,6], [0.1,0.2,0.3,0.4], [0.5,0.75,1.0], [1,3,5]):
+            tunable_params = {'max_depth':max_depth, 'eta':eta, 'subsample':subsample, 'lambda':xgb_lambda}
+            params = {'objective':'binary:logistic', 'silent': True, 'nthread':1}
+            params.update(tunable_params)
+            print(num_rounds, tunable_params)
+            print('num_rounds =', num_rounds, file=f)
+            print(tunable_params, file=f)
+            res = xgb.cv(params, dtrain, num_boost_round=num_rounds, nfold=3, show_progress=True, feval=PRF1, show_stdv=False)
+            res = tuple(zip(res.values[-1,[0,4,2,6,10,8]], res.columns[[0,4,2,6,10,8]]))
+            print(*res, sep='\n', end='\n\n', file=f)
+            gridsearches.append((res, tunable_params))
+            print()
+            exit()
+
+        gridsearches.sort(key=lambda p: p[0])
+        print(*gridsearches, sep='\n')
     exit()
 
 
+params = {'max_depth':6, 'eta':0.3, 'subsample':1.0, 'lambda':5, 'silent':1, 'objective':'binary:logistic'}
+num_rounds=150
 bst = xgb.train(params, dtrain, num_boost_round=num_rounds, evals=[(dtrain,'train')])
 del dtrain
 #xgb.train(params, dtest, num_boost_round=num_rounds, evals=[(dtrain,'train'), (dtest, 'test')], xgb_model=bst)
@@ -87,7 +120,6 @@ output_dir = datetime.datetime.now().strftime('data/output/%Y-%m-%d-%H-%M')
 os.makedirs(output_dir)
 bst.save_model('{}/xgb.model'.format(output_dir))
 
-THRESHOLD = 0.1
 def test_on_set(which, f):
     #m, labels = load_set(which)
     #dtest = xgb.DMatrix(m, label=labels)
@@ -120,6 +152,7 @@ with open('{}/info.txt'.format(output_dir), 'w') as f:
     print('Params:', params, end='\n\n', sep='\n', file=f)
     print('num_boost_round =', num_rounds, file=f)
     print('THRESHOLD =', THRESHOLD, file=f)
+    print('\n', file=f)
 
     test_on_set('train', f)
     test_on_set('test', f)

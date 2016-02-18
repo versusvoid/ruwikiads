@@ -4,11 +4,11 @@ all: xgb-dmatrix-translator.out
 
 # \
 	g++ --std=c++14 -g3 -ggdb3 -pthread -Wall \
-        g++ --std=c++14 -O3 -pthread -Wall \
+	g++ --std=c++14 -O3 -pthread -Wall \
 
 
 xgb-dmatrix-translator.out: xgb-dmatrix-translator.cpp
-	g++ --std=c++14 -O3 -pthread -Wall \
+	g++ --std=c++14 -g3 -ggdb3 -pthread -Wall \
 		xgb-dmatrix-translator.cpp \
 		-I/home/versus/tmp/xgboost/include \
 		-L/home/versus/tmp/xgboost/lib \
