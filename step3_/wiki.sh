@@ -15,7 +15,7 @@ BINARY=0
 NUM_THREADS=8
 X_MAX=100
 ETA=0.04
-SAVE_FILE=data/output/vectors-${VECTOR_SIZE}d-${MAX_ITER}i-${WINDOW_SIZE}w
+SAVE_FILE=data/temp/vectors-${VECTOR_SIZE}d-${MAX_ITER}i-${WINDOW_SIZE}w
 
 ./wiki-reader.out | $BUILDDIR/vocab_count -min-count $VOCAB_MIN_COUNT -max-vocab $MAX_VOCAB -verbose $VERBOSE > $VOCAB_FILE
 if [[ $? -ne 0 ]]; then

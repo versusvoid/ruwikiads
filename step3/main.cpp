@@ -16,13 +16,6 @@
 
 #include "features.hpp"
 
-#if defined(_MSC_VER)
-# define POPEN _popen
-# define PCLOSE _pclose
-#else
-# define POPEN popen
-# define PCLOSE pclose
-#endif
 
 #define SEPARATOR L"samplesSeparator"
 #define ADS_LABEL 1.0
@@ -240,7 +233,7 @@ features_dict extract_features_from_file(file_split_t* file_split,
     profiler word_profiler(filename + " word");
 #endif
 
-    std::shared_ptr<FILE> bunzip2(POPEN(("bunzip2 -c -k " + file_split->filename).c_str(), "r"), PCLOSE);
+    std::shared_ptr<FILE> bunzip2(popen(("bunzip2 -c -k " + file_split->filename).c_str(), "r"), pclose);
 
     size_t len = 4096;
     char* buf = (char*)malloc(len  * sizeof(char));
@@ -527,10 +520,10 @@ void output_index(csr_matrix_t& set, const std::string& filename) {
     }
 }
 
-void output_features_index(const std::string& output_directory,
+void output_features_index(const std::string& filename,
                            features_indexes_t& features_indexes)
 {
-    std::wofstream f(output_directory + "/features-indexes.txt");
+    std::wofstream f(filename);
     for (auto& kv : features_indexes) {
         assert(kv.first.find(L':') == kv.first.npos);
         f << kv.first << L":" << std::to_wstring(kv.second) << std::endl;
@@ -573,7 +566,7 @@ int main(int argc, char** argv)
                                          NON_ADS_LABEL,
                                          0.0);
     }
-    std::wcout << "Featured samples counted" << std::endl;
+    std::wcout << "Non ads samples counted" << std::endl;
 
     std::wcout << "Computing feature indices" << std::endl;
 
@@ -583,7 +576,7 @@ int main(int argc, char** argv)
     std::wcout << features_indexes.size() << " features" << std::endl;
     std::wcout << "Feature indexes computed. Dumping to file." << std::endl;
 
-    output_features_index(output_directory, features_indexes);
+    output_features_index(output_directory + "/features-indexes.txt", features_indexes);
 
     auto _ignored = extract_features_from_file(&wiki_ads_file_split,
                                                &features_indexes,

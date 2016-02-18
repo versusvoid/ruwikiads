@@ -74,7 +74,7 @@ if dtrain.num_row() == 0:
 
 num_rounds=150
 #params = {'max_depth':4, 'eta':0.1, 'subsample':0.5, 'lambda':10, 'silent':1, 'objective':'binary:logistic' }
-params = {'max_depth':6, 'eta':0.3, 'subsample':1.0, 'lambda':6, 'silent':1, 'objective':'binary:logistic'}
+params = {'max_depth':6, 'eta':0.2, 'subsample':1.0, 'lambda':5, 'silent':1, 'objective':'binary:logistic'}
 if '-cv' in sys.argv:
     xgb.cv(params, dtrain, num_boost_round=num_rounds, nfold=10, show_progress=True)
     exit()
@@ -87,6 +87,7 @@ output_dir = datetime.datetime.now().strftime('data/output/%Y-%m-%d-%H-%M')
 os.makedirs(output_dir)
 bst.save_model('{}/xgb.model'.format(output_dir))
 
+THRESHOLD = 0.1
 def test_on_set(which, f):
     #m, labels = load_set(which)
     #dtest = xgb.DMatrix(m, label=labels)
@@ -98,7 +99,7 @@ def test_on_set(which, f):
     labels = dtest.get_label()
 
     predicted = bst.predict(dtest)
-    predicted = (predicted > 0.1).astype(int)
+    predicted = (predicted > THRESHOLD).astype(int)
 
     tp = sum(np.logical_and(predicted == 1, labels == 1).astype(int))
     fp = sum(np.logical_and(predicted == 1, labels == 0).astype(int))
@@ -116,6 +117,9 @@ def test_on_set(which, f):
 
 with open('{}/info.txt'.format(output_dir), 'w') as f:
     print('Trained on', dataset_dir, end='\n\n', file=f)
+    print('Params:', params, end='\n\n', sep='\n', file=f)
+    print('num_boost_round =', num_rounds, file=f)
+    print('THRESHOLD =', THRESHOLD, file=f)
 
     test_on_set('train', f)
     test_on_set('test', f)
