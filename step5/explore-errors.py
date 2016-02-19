@@ -130,7 +130,7 @@ if input().strip().lower().startswith('y'):
 
 print('Draw features importance? [y/N]: ', end='')
 if input().strip().lower().startswith('y'):
-    feature_names = [0]*dtest.num_col()
+    feature_names = [0]*dataset.num_col()
     feature_map = {}
     with (dataset_dir / "features-indexes.txt").open() as f:
         for l in f:
@@ -138,7 +138,7 @@ if input().strip().lower().startswith('y'):
             name = name.replace(' ', '-')
             feature_names[int(index)] = name
             feature_map[name] = int(index)
-    assert len(feature_map) == dtest.num_col()
+    assert len(feature_map) == dataset.num_col()
     bst.feature_names = feature_names
     p = xgb.plot_importance(bst)
     p.figure.show()

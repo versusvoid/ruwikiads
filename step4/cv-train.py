@@ -2,6 +2,7 @@
 
 import numpy as np
 import xgboost as xgb
+import matplotlib.pyplot as plt
 from scipy.io import loadmat
 from scipy.sparse import csr_matrix
 import os.path
@@ -42,18 +43,9 @@ else:
     if choice == '':
         dataset_dir = str(datasets[0])
     else:
-        dataset_dir = str(dtatsets[int(choice) - 1])
+        dataset_dir = str(datasets[int(choice) - 1])
 
-
-def load_set(which='train'):
-    d = loadmat('../step3/data/output/{}-set.mat'.format(which))
-    m = d['m'].tocsr()
-    print(m.shape)
-    labels = np.array(d['labels'].tocsr().todense())[0,:]
-    del d
-    return m, labels
-
-def load_mat(which='train'):
+def load_mat(which):
     d = xgb.DMatrix('{}/{}-set.dmatrix.bin'.format(dataset_dir, which))
     return d
 
@@ -82,38 +74,44 @@ def PRF1(predicted, dmatrix):
     fn = sum(np.logical_and(predicted == 0, labels == 1).astype(int))
     precision = tp / (tp + fp)
     recall = tp / (tp + fn)
-    f1 = 2 * precision * recall / (precision + recall)
 
-    return [('f1', f1), ('recall', recall), ('precision', precision)]
+    return [('1-recall', recall), ('2-precision', precision)]
 
 
 #params = {'max_depth':4, 'eta':0.1, 'subsample':0.5, 'lambda':10, 'silent':1, 'objective':'binary:logistic' }
 if '-cv' in sys.argv:
-    with open('data/output/cv-results.txt', 'w') as f:
+    with open('data/output/cv-results.{}.txt'.format(datetime.datetime.now().strftime('%Y-%m-%d-%H-%M')), 'w') as f:
         print('Dataset:', dataset_dir, end='\n\n', file=f)
         gridsearches = []
-        for num_rounds, max_depth, eta, subsample, xgb_lambda in itertools.product([50, 100, 150], [4,5,6], [0.1,0.2,0.3,0.4], [0.5,0.75,1.0], [1,3,5]):
+        for num_rounds, max_depth, eta, subsample, xgb_lambda in itertools.product([150], [6], [0.1], [0.5], [5]):
             tunable_params = {'max_depth':max_depth, 'eta':eta, 'subsample':subsample, 'lambda':xgb_lambda}
-            params = {'objective':'binary:logistic', 'silent': True, 'nthread':1}
+            params = {'objective':'binary:logistic', 'silent': True, 'nthread':4}
             params.update(tunable_params)
             print(num_rounds, tunable_params)
             print('num_rounds =', num_rounds, file=f)
             print(tunable_params, file=f)
-            res = xgb.cv(params, dtrain, num_boost_round=num_rounds, nfold=3, show_progress=True, feval=PRF1, show_stdv=False)
+            res = xgb.cv(params, dtrain, num_boost_round=num_rounds, nfold=3, 
+                            show_progress=True, show_stdv=True, 
+                            early_stopping_rounds=None, maximize=True, feval=PRF1)
+            plt.plot(range(num_rounds), res['test-1-recall-mean'], 'r-')
+            plt.plot(range(num_rounds), res['test-3-precision-mean'], 'g-')
+            plt.savefig('test-means-{}-{}-{}.png'.format(num_rounds, eta, xgb_lambda))
+            plt.clf()
+
             res = tuple(zip(res.values[-1,[0,4,2,6,10,8]], res.columns[[0,4,2,6,10,8]]))
+            print(*res, sep='\n', end='\n\n')
             print(*res, sep='\n', end='\n\n', file=f)
             gridsearches.append((res, tunable_params))
-            print()
-            exit()
 
         gridsearches.sort(key=lambda p: p[0])
         print(*gridsearches, sep='\n')
     exit()
 
 
-params = {'max_depth':6, 'eta':0.3, 'subsample':1.0, 'lambda':5, 'silent':1, 'objective':'binary:logistic'}
-num_rounds=150
-bst = xgb.train(params, dtrain, num_boost_round=num_rounds, evals=[(dtrain,'train')])
+params = {'max_depth':4, 'eta':0.2, 'subsample':0.5, 'lambda':30, 'silent':1, 'objective':'binary:logistic'}
+num_rounds=250
+other_choice = 'test' if choice == 'train' else 'train'
+bst = xgb.train(params, dtrain, num_boost_round=num_rounds, evals=[(dtrain, choice), (load_mat(other_choice), other_choice)], feval=PRF1)
 del dtrain
 #xgb.train(params, dtest, num_boost_round=num_rounds, evals=[(dtrain,'train'), (dtest, 'test')], xgb_model=bst)
 output_dir = datetime.datetime.now().strftime('data/output/%Y-%m-%d-%H-%M')
