@@ -50,12 +50,12 @@ def extract_ads(wikitext):
     return WikiExtractor3.clear_wikitext(extract_wiki_section(before, after))
 
 
-def output_featured_sample(section, pageTitle, featuredf):
-    featuredf.write(pageTitle.encode())
-    featuredf.write(b'\n\n')
-    featuredf.write(section.encode())
-    featuredf.write(b'\n')
-    featuredf.write(b'\nsamplesSeparator\n')
+def output_non_ads_sample(section, pageTitle, non_adsf):
+    non_adsf.write(pageTitle.encode())
+    non_adsf.write(b'\n\n')
+    non_adsf.write(section.encode())
+    non_adsf.write(b'\n')
+    non_adsf.write(b'\nsamplesSeparator\n')
 
 # -----------------------------------------------------------------------------------------------------------------------
 
@@ -110,17 +110,18 @@ writer = threading.Thread(target=writer_thread, args=(writing_queue,))
 writer.start()
 
 
-featured_files = []
+non_ads_files = []
 for i in range(8):
-    p = subprocess.Popen(["bzip2 -9 > data/output/featured-samples.{}.stemmed.txt.bz2".format(i)],
+    p = subprocess.Popen(["bzip2 -9 > data/output/non-ads-samples.{}.stemmed.txt.bz2".format(i)],
             shell=True, stdin=subprocess.PIPE, universal_newlines=True)
-    f = open("data/output/featured-samples.{}.index.txt".format(i), 'w')
-    featured_files.append((p, f))
+    f = open("data/output/non-ads-samples.{}.index.txt".format(i), 'w')
+    non_ads_files.append((p, f))
 next_file = 0
 
 ads_files = (subprocess.Popen(["bzip2 -9 > data/output/ads-samples.stemmed.txt.bz2"], 
                 shell=True, stdin=subprocess.PIPE, universal_newlines=True),
              open("data/output/ads-samples.index.txt", 'w'))
+ads_text_file = open("data/output/ads-samples.txt", 'w')
 
 
 isPage = False
@@ -131,7 +132,7 @@ with bz2.open('data/input/ruwiki-20151226-pages-articles-multistream.xml.bz2', '
     for l in f:
         l = l.decode('utf-8')
         if isPage:
-            #if ( (l.find('<ns>') != -1 and l != '    <ns>0</ns>\n') or featured_regex.search(l) ):
+            #if ( (l.find('<ns>') != -1 and l != '    <ns>0</ns>\n') or non_ads_regex.search(l) ):
             if (l.find('<ns>') != -1 and l != '    <ns>0</ns>\n'):
                 isPage = False
                 pageParts = []
@@ -158,18 +159,24 @@ with bz2.open('data/input/ruwiki-20151226-pages-articles-multistream.xml.bz2', '
                     else:
                         writing_queue.put((pageTitle, text, ads_files))
 
+                        assert pageTitle.find('\n') == -1
+
+                        print(pageTitle, file=ads_text_file)
+                        print(text, file=ads_text_file)
+                        print('samplesSeparator', file=ads_text_file)
+
                 else:
 
                     wikitext = get_wikitext(pageElement)
                     if len(wikitext) > 2500:
                         for section in WikiExtractor3.split_article(wikitext):
-                            writing_queue.put((pageTitle, section, featured_files[next_file]))
-                            next_file = (next_file + 1) % len(featured_files)
+                            writing_queue.put((pageTitle, section, non_ads_files[next_file]))
+                            next_file = (next_file + 1) % len(non_ads_files)
                     else:
                         text = WikiExtractor3.clear_wikitext(wikitext)
                         if len(text) > 200:
-                            writing_queue.put((pageTitle, text, featured_files[next_file]))
-                            next_file = (next_file + 1) % len(featured_files)
+                            writing_queue.put((pageTitle, text, non_ads_files[next_file]))
+                            next_file = (next_file + 1) % len(non_ads_files)
                     
                 
                 isPage = False
@@ -185,6 +192,7 @@ print('Waiting writer')
 writer.join()
 print('Writer finished')
 
+ads_text_file.close()
 ads_files[0].stdin.close()
 try:
     print('Waiting ads subprocess')
@@ -198,15 +206,15 @@ except:
 
 
 
-for i in range(len(featured_files)):
-    featured_files[i][0].stdin.close()
+for i in range(len(non_ads_files)):
+    non_ads_files[i][0].stdin.close()
     try:
-        print('Waiting featured subprocess #', i, sep='')
-        featured_files[i][0].wait(30)
+        print('Waiting non ads subprocess #', i, sep='')
+        non_ads_files[i][0].wait(30)
     except:
-        print("Can't wait featured subprocess")
+        print("Can't wait non ads subprocess")
     try:
-        featured_files[i][1].close()
+        non_ads_files[i][1].close()
     except:
-        print("Can't close featured files")
+        print("Can't close non ads files")
 

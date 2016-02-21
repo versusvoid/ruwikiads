@@ -108,15 +108,25 @@ if '-cv' in sys.argv:
     exit()
 
 
-params = {'max_depth':4, 'eta':0.2, 'subsample':0.5, 'lambda':30, 'silent':1, 'objective':'binary:logistic'}
-num_rounds=250
+params = {'max_depth':6, 'eta':0.01, 'subsample':0.5, 'lambda':5, 'silent':1, 'objective':'binary:logistic'}
+num_rounds=800
 other_choice = 'test' if choice == 'train' else 'train'
-bst = xgb.train(params, dtrain, num_boost_round=num_rounds, evals=[(dtrain, choice), (load_mat(other_choice), other_choice)], feval=PRF1)
+results = {}
+bst = xgb.train(params, dtrain, num_boost_round=num_rounds, 
+        evals=[(dtrain, choice), (load_mat(other_choice), other_choice)], feval=PRF1, evals_result=results)
 del dtrain
-#xgb.train(params, dtest, num_boost_round=num_rounds, evals=[(dtrain,'train'), (dtest, 'test')], xgb_model=bst)
 output_dir = datetime.datetime.now().strftime('data/output/%Y-%m-%d-%H-%M')
 os.makedirs(output_dir)
 bst.save_model('{}/xgb.model'.format(output_dir))
+
+plt.figure(figsize=(19.2, 10.8))
+plt.plot(range(num_rounds), results['train']['recall'], 'r-', label='train recall')
+plt.plot(range(num_rounds), results['train']['precision'], 'b-', label='train precision')
+plt.plot(range(num_rounds), results['test']['recall'], 'm-', label='test recall')
+plt.plot(range(num_rounds), results['test']['precision'], 'c-', label='test precision')
+plt.legend(loc='center left')
+plt.savefig('{}/learning-curves.png'.format(output_dir))
+plt.clf()
 
 def test_on_set(which, f):
     #m, labels = load_set(which)

@@ -92,6 +92,21 @@ def load_titles(label):
 
     return indices, titles
 
+
+ads = {}
+with open('../step1/data/output/ads-samples.txt', 'r') as f:
+    title = None
+    article = []
+    for l in f:
+        if title is None:
+            title = l
+        elif l.startswith('samplesSeparator'):
+            ads[title] = ''.join(article)
+            article = []
+            title = None
+        else:
+            article.append(l)
+
 def sanity_check(row_indices, label):
     labels = dataset.get_label()
     indices = np.nonzero(labels) if label == '1' else np.nonzero(1 - labels)
@@ -115,7 +130,12 @@ def explore_samples(label):
             subprocess.run(['chromium', title])
         else:
             print('Article "', title, '" is an ad with P = ', p, sep='')
-            subprocess.run(['chromium', 'https://ru.wikipedia.org/wiki/{}'.format(title)])
+            if title in ads:
+                print(ads[title])
+            elif not input('Open browser? [y/N]: ').strip().lower().startswith('y'): 
+                continue
+            else:
+                subprocess.run(['chromium', 'https://ru.wikipedia.org/wiki/{}'.format(title)])
         try:
             input()
         except KeyboardInterrupt: break

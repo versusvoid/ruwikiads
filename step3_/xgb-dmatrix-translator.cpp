@@ -1,13 +1,14 @@
 #include <stdio.h>
-#include <unordered_map>
-#include <future>
-#include <codecvt>
-#include <locale>
-#include <iostream>
-#include <fstream>
-#include <memory>
-#include <vector>
+#include <algorithm>
 #include <cassert>
+#include <codecvt>
+#include <fstream>
+#include <future>
+#include <iostream>
+#include <locale>
+#include <memory>
+#include <unordered_map>
+#include <vector>
 #include <boost/algorithm/string.hpp>
 #include <boost/multiprecision/gmp.hpp>
 #include <boost/dynamic_bitset.hpp>
@@ -17,7 +18,7 @@
 #include <sys/stat.h>
 
 #define VECTOR_LENGTH 20
-#define NUM_FEATURES (VECTOR_LENGTH*8)
+#define NUM_FEATURES (VECTOR_LENGTH*6)
 #define SEPARATOR L"samplesSeparator"
 #define ADS_LABEL 1.0
 #define NON_ADS_LABEL 0.0
@@ -154,8 +155,6 @@ struct moments_data_t {
     uint32_t length;
     std::array<double, VECTOR_LENGTH> sum;
     std::array<double, VECTOR_LENGTH> sum_of_squares;
-    std::array<double, VECTOR_LENGTH> sum_of_cubes;
-    std::array<double, VECTOR_LENGTH> sum_of_bisquares;
     std::array<double, VECTOR_LENGTH> sum_of_reciprocal;
     std::array<float, VECTOR_LENGTH> min;
     std::array<float, VECTOR_LENGTH> max;
@@ -166,8 +165,6 @@ struct moments_data_t {
         for (auto i = 0; i < VECTOR_LENGTH; ++i) {
             sum[i] = 0;
             sum_of_squares[i] = 0;
-            sum_of_cubes[i] = 0;
-            sum_of_bisquares[i] = 0;
             sum_of_reciprocal[i] = 0;
             min[i] = INFINITY;
             max[i] = -INFINITY;
@@ -182,11 +179,9 @@ struct moments_data_t {
             double v = word_vector[i];
             sum[i] += v;
             sum_of_squares[i] += v*v;
-            sum_of_cubes[i] += v*v*v;
-            sum_of_bisquares[i] += v*v*v*v;
             sum_of_reciprocal[i] += 1/v;
-            min[i] = std::min(min[i], v);
-            max[i] = std::max(max[i], v);
+            min[i] = std::min(min[i], float(v));
+            max[i] = std::max(max[i], float(v));
             //product[i] *= v;
         }
     }
@@ -194,28 +189,14 @@ struct moments_data_t {
     void finalize(matrix_t& matrix) {
         for (auto i = 0; i < VECTOR_LENGTH; ++i) {
             double mean = sum[i] / length;
-            double mean_2 = sum_of_squares[i] / length;
-            double mean_3 = sum_of_cubes[i] / length;
-            double mean_4 = sum_of_bisquares[i] / length;
             matrix.data.push_back(float(mean));
 
             double mean_sqr = mean * mean;
             double std = std::sqrt((sum_of_squares[i] - length*mean_sqr) / (length - 1));
             matrix.data.push_back(float(std));
 
-            double std_sqr = std*std;
             double root_mean_square = std::sqrt(sum_of_squares[i] / length);
             matrix.data.push_back(float(root_mean_square));
-
-            double mean_cube = mean_sqr * mean;
-            double mu3 = (mean_3 - 3*mean_2*mean + 2*mean_cube) / length;
-            double std_cube = std_sqr * std;
-            matrix.data.push_back(float(mu3 / std_cube));
-
-            double mean_bisquare = mean_cube * mean;
-            double mu4 = (mean_4 - 4*mean_3*mean + 6*mean_2*mean_sqr - 3 * mean_bisquare) / length;
-            double std_bisquare = std_cube * std;
-            matrix.data.push_back(float(mu4 / std_bisquare - 3.0));
 
             double harmonic_mean = length / sum_of_reciprocal[i];
             matrix.data.push_back(float(harmonic_mean));
@@ -467,10 +448,6 @@ void output_features_index(const std::string& filename)
         j += 1;
         f << "root-mean-square-" << std::to_wstring(i) << ':' << j << std::endl;
         j += 1;
-        f << "skewness-" << std::to_wstring(i) << ':' << j << std::endl;
-        j += 1;
-        f << "kurtosis-" << std::to_wstring(i) << ':' << j << std::endl;
-        j += 1;
         f << "harmonic_mean-" << std::to_wstring(i) << ':' << j << std::endl;
         j += 1;
         f << "min-" << std::to_wstring(i) << ':' << j << std::endl;
@@ -501,7 +478,7 @@ int main(int argc, char** argv)
             num_non_ads_samples_files += 1;
         }
     }
-    num_non_ads_samples_files = 4;
+    num_non_ads_samples_files = 2;
 
 
     file_split_t wiki_ads_file_split(output_directory, wiki_ads_samples_file, ADS_LABEL, 0.4);
