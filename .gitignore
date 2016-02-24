@@ -8,3 +8,7 @@ __pycache__
 *.xml
 a.out
 data
+xgboost
+mystem
+reports
+*.out

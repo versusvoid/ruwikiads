@@ -1,3 +1,9 @@
+'''
+Functions in this module handle general processing
+(load, extract links, compute full url) of page in 
+selenium driver. 
+Text content processing dvells in html_filtering.py.
+'''
 
 from logs import *
 from html_filtering import *
@@ -18,7 +24,7 @@ class DriverHolder(object):
 
 
 def renew_driver(old_driver=None):
-    print('renewing driver')
+    log('renewing driver')
 
     if old_driver:
         try:
@@ -45,6 +51,12 @@ class PageLoadException(Exception):
     pass
 
 def get_company_page(driver, url):
+    """
+    Does everything possible to load page at `url` with `driver`.
+    Partially handles javascript redirections. Recovers from various
+    phantomjs errors.
+    """
+
     old_url = driver.driver.current_url
     if url == old_url: return
 
@@ -64,7 +76,6 @@ def get_company_page(driver, url):
                     raise PageLoadException(url)
                 log('New url:', driver.driver.current_url)
         else:
-            #log('Getting:', url)
             for i in range(2):
                 try:
                     driver.driver.get(url)
@@ -74,10 +85,9 @@ def get_company_page(driver, url):
                     renew_driver(driver)
                     if i == 1:
                         raise
-            #log('Got:', url)
     except (TimeoutException, WebDriverException):
         raise PageLoadException(url)
-    #wait_log(driver.driver.page_source)
+    
     if old_url == driver.driver.current_url:
         raise PageLoadException(url)
 
@@ -147,18 +157,12 @@ def extract_from_about_page(driver):
     extracted_content = extract_content(driver)
 
     if extracted_content == None and url.path != '/':
-        #raise Exception('tmp')
         extracted_content = extract_from_child_page(driver, url, links)
 
     return extracted_content
 
 def output_extracted_content(f, extracted_content, url):
-    #log('extracted:', extracted_content, sep='\n'); 
     wait_log('extracted:', extracted_content, sep='\n'); 
-    #if not re.search(sentence_regexp, extracted_content, re.MULTILINE):
-        #wait_log(url.geturl(), '\n', extracted_content, '\n===========================\n')
-    #    wait_log('no sentences')
-        #input()
     print(url.geturl(), '\n', file=f)
     print(extracted_content, file=f)
     print('samplesSeparator', file=f)

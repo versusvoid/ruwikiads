@@ -1,6 +1,7 @@
 
-#logging = True
-logging = False
+import sys
+
+logging = '-d' in sys.argv
 def log(*args, **kwargs):
     if logging:
         print(*args, **kwargs)

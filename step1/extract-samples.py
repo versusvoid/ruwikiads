@@ -127,12 +127,11 @@ ads_text_file = open("data/output/ads-samples.txt", 'w')
 isPage = False
 pageParts = []
 pageTitle = None
-with bz2.open('data/input/ruwiki-20151226-pages-articles-multistream.xml.bz2', 'r') as f:
+with bz2.open('data/input/ruwiki-pages-articles-multistream.xml.bz2', 'r') as f:
     i = 0
     for l in f:
         l = l.decode('utf-8')
         if isPage:
-            #if ( (l.find('<ns>') != -1 and l != '    <ns>0</ns>\n') or non_ads_regex.search(l) ):
             if (l.find('<ns>') != -1 and l != '    <ns>0</ns>\n'):
                 isPage = False
                 pageParts = []

@@ -27,7 +27,6 @@ std::wstring_convert<std::codecvt_utf8<wchar_t>, wchar_t> ucs2conv;
 inline bool getline(char** lineptr, size_t* n, FILE* file, std::wstring& out) {
     assert(*lineptr != nullptr);
     auto len = getline(lineptr, n, file);
-    //if (len == ssize_t(-1) and not feof(file)) return false;
     if (len == ssize_t(-1)) return false;
     out = ucs2conv.from_bytes(*lineptr, *lineptr + len);
     return true;

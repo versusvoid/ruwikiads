@@ -1,4 +1,5 @@
 
+XGBOOST_DIR ?= ../xgboost
 
 all: a.out
 
@@ -10,14 +11,17 @@ all: a.out
 a.out: main.cpp features.hpp Makefile
 	g++ --std=c++14 -O3 -pthread -Wall \
 		main.cpp \
-		-I/home/versus/tmp/xgboost/include \
-		-L/home/versus/tmp/xgboost/lib \
-		-L/home/versus/tmp/xgboost/dmlc-core \
-		-L/home/versus/tmp/xgboost/rabit/lib \
-		-L/home/versus/tmp/xgboost/lib \
+		-I${XGBOOST_DIR}/include \
+		-L${XGBOOST_DIR}/lib \
+		-L${XGBOOST_DIR}/dmlc-core \
+		-L${XGBOOST_DIR}/rabit/lib \
+		-L${XGBOOST_DIR}/lib \
 		-Wl,-Bdynamic -lboost_system -lboost_filesystem \
 		-Wl,-Bstatic -lxgboost -lrabit -ldmlc -Wl,-Bdynamic \
 		-lgomp -lrt -lm -ldl \
+
+run: a.out
+	sh -c 'time ./a.out'
 
 clean:
 	rm a.out

@@ -1,27 +1,34 @@
 
+XGBOOST_DIR ?= ../xgboost
 
-all: xgb-dmatrix-translator.out
+all: xgb-dmatrix-translator.out wiki-reader.out
 
 # \
 	g++ --std=c++14 -g3 -ggdb3 -pthread -Wall \
 	g++ --std=c++14 -O3 -pthread -Wall \
 
+wiki-reader.out: wiki-reader.cpp
+	g++ --std=c++14 -O3 -Wall wiki-reader.cpp
 
 xgb-dmatrix-translator.out: xgb-dmatrix-translator.cpp
 	g++ --std=c++14 -O3 -pthread -Wall \
 		xgb-dmatrix-translator.cpp \
-		-I/home/versus/tmp/xgboost/include \
-		-L/home/versus/tmp/xgboost/lib \
-		-L/home/versus/tmp/xgboost/dmlc-core \
-		-L/home/versus/tmp/xgboost/rabit/lib \
-		-L/home/versus/tmp/xgboost/lib \
-                -Wl,-Bdynamic -lboost_system -lboost_filesystem \
+		-I${XGBOOST_DIR}/include \
+		-L${XGBOOST_DIR}/lib \
+		-L${XGBOOST_DIR}/dmlc-core \
+		-L${XGBOOST_DIR}/rabit/lib \
+		-L${XGBOOST_DIR}/lib \
+        -Wl,-Bdynamic -lboost_system -lboost_filesystem \
 		-Wl,-Bstatic -lxgboost -lrabit -ldmlc -Wl,-Bdynamic \
 		-lgomp -lrt -lm -ldl \
 		-o xgb-dmatrix-translator.out
 
-run: xgb-dmatrix-translator.out
+run: xgb-dmatrix-translator.out data/temp/vectors-20d-30i-15w.txt
 	sh -c 'time ./xgb-dmatrix-translator.out'
+
+data/temp/vectors-20d-30i-15w.txt: wiki-reader.out ../step1/data/output/ads-samples.stemmed.txt.bz2 ../step2/data/output/yaca-ads.stemmed.txt.bz2
+	./wiki.sh
+
 
 clean:
 	rm a.out
