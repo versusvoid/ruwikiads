@@ -540,14 +540,14 @@ int main(int argc, char** argv)
     std::locale::global(std::locale(std::locale(""), "C", std::locale::numeric));
     std::wcout.imbue(std::locale());
 
-    std::string non_ads_samples_file = "../step1/data/output/featured-samples.%d.stemmed.txt.bz2";
+    std::string non_ads_samples_file = "../step1/data/output/non-ads-samples.%d.stemmed.txt.bz2";
     std::string wiki_ads_samples_file = "../step1/data/output/ads-samples.stemmed.txt.bz2";
     std::string ads_samples_file = "../step2/data/output/yaca-ads.stemmed.txt.bz2";
 
     uint32_t num_non_ads_samples_files = 0;
     for (auto&& x : boost::filesystem::directory_iterator("../step1/data/output/")) {
         auto filename = x.path().filename().string();
-        if (boost::starts_with(filename, "featured-samples.") and
+        if (boost::starts_with(filename, "non-ads-samples.") and
                 boost::ends_with(filename, ".stemmed.txt.bz2")) {
             num_non_ads_samples_files += 1;
         }

@@ -52,8 +52,8 @@ int main() {
     process_file("../step2/data/output/yaca-ads.stemmed.txt.bz2");
     std::cerr << "Done yaca-ads" << std::endl;
     for (auto i = 0; i < 8; ++i) {
-        process_file("../step1/data/output/featured-samples." + std::to_string(i) + ".stemmed.txt.bz2");
-        std::cerr << "Done featured samples #" << i << std::endl;
+        process_file("../step1/data/output/non-ads-samples." + std::to_string(i) + ".stemmed.txt.bz2");
+        std::cerr << "Done non ads samples #" << i << std::endl;
     }
 
 }
