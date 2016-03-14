@@ -50,7 +50,15 @@ elif len(models) == 1:
 else:
     print('Choose model:')
     for i, p in enumerate(models):
-        print(i + 1, ') ', p, sep='')
+        precision = None
+        recall = None
+        dataset = None
+        with (p / 'info.txt').open('r') as f:
+            lines = f.readlines()
+            dataset = lines[0].strip().split()[-1]
+            recall = lines[-3].strip().split()[1]
+            precision = lines[-4].strip().split()[1]
+        print(i + 1, ') ', p, ' (precision: ', precision, ', recall: ', recall, ', trained on: ', dataset, ')', sep='')
     print('Your choice [1]: ', end='')
     choice = input().strip()
     if choice == '':

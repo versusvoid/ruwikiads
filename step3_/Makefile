@@ -26,8 +26,9 @@ xgb-dmatrix-translator.out: xgb-dmatrix-translator.cpp
 run: xgb-dmatrix-translator.out data/temp/vectors-20d-30i-15w.txt
 	sh -c 'time ./xgb-dmatrix-translator.out'
 
-data/temp/vectors-20d-30i-15w.txt: wiki-reader.out ../step1/data/output/ads-samples.stemmed.txt.bz2 ../step2/data/output/yaca-ads.stemmed.txt.bz2
-	./wiki.sh
+data/temp/vectors-20d-30i-15w.txt: wiki-reader.out ../step1/data/output/ads-samples.stemmed.txt.bz2 ../step2/data/output/ads.stemmed.txt.bz2
+	#./wiki.sh
+	echo wtf
 
 
 clean:

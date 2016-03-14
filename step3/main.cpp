@@ -542,7 +542,7 @@ int main(int argc, char** argv)
 
     std::string non_ads_samples_file = "../step1/data/output/non-ads-samples.%d.stemmed.txt.bz2";
     std::string wiki_ads_samples_file = "../step1/data/output/ads-samples.stemmed.txt.bz2";
-    std::string ads_samples_file = "../step2/data/output/yaca-ads.stemmed.txt.bz2";
+    std::string ads_samples_file = "../step2/data/output/ads.stemmed.txt.bz2";
 
     uint32_t num_non_ads_samples_files = 0;
     for (auto&& x : boost::filesystem::directory_iterator("../step1/data/output/")) {
@@ -555,8 +555,8 @@ int main(int argc, char** argv)
     num_non_ads_samples_files = 2;
 
 
-    file_split_t wiki_ads_file_split(output_directory, wiki_ads_samples_file, ADS_LABEL, 0.4);
-    file_split_t ads_file_split(output_directory, ads_samples_file, ADS_LABEL, 0.4);
+    file_split_t wiki_ads_file_split(output_directory, wiki_ads_samples_file, ADS_LABEL, 1.0);
+    file_split_t ads_file_split(output_directory, ads_samples_file, ADS_LABEL, 0.0);
 
 
     std::wcout << "Counting non ads samples" << std::endl;

@@ -35,20 +35,32 @@ elif len(models) == 1:
 else:
     print('Choose model:')
     for i, p in enumerate(models):
-        print(i + 1, ') ', p, sep='')
+        precision = None
+        recall = None
+        dataset = None
+        with (p / 'info.txt').open('r') as f:
+            lines = f.readlines()
+            dataset = lines[0].strip().split()[-1]
+            recall = lines[-3].strip().split()[1]
+            precision = lines[-4].strip().split()[1]
+        print(i + 1, ') ', p, ' (precision: ', precision, ', recall: ', recall, ', trained on: ', dataset, ')', sep='')
     print('Your choice [1]: ', end='')
     choice = input().strip()
     if choice == '':
         model_dir = models[0]
     else:
-        model_dir = dtatsets[int(choice) - 1]
+        model_dir = models[int(choice) - 1]
 
 bst = xgb.Booster(model_file=str(model_dir / 'xgb.model'))
+dataset_basedir = None
+with (model_dir / 'info.txt').open('r') as f:
+    dataset_basedir = f.readline().strip().split()[-1].split('/')[1]
+
 
 # ------------------------- Dataset --------------------------------------------------------
 
 
-datasets = [p for p in Path('..').glob('step3*/data/output/*') 
+datasets = [p for p in Path('..').glob('{}/data/output/*'.format(dataset_basedir)) 
                     if p.is_dir() and re.fullmatch('\d{4}-\d{2}-\d{2}-\d{2}-\d{2}', p.name)]
 def set_files_present(p):
     if (not (p / 'train-set.dmatrix.bin').exists() or
@@ -73,7 +85,15 @@ elif len(datasets) == 1:
 else:
     print('Choose dataset:')
     for i, p in enumerate(datasets):
-        print(i + 1, ') ', p, sep='')
+        ads_split = None
+        wiki_ads_split = None
+        non_ads_split = None
+        with (p / 'info.txt').open('r') as f:
+            lines = f.readlines()
+            wiki_ads_split = lines[0].strip().split()[1]
+            ads_split = lines[1].strip().split()[1]
+            non_ads_split = lines[2].strip().split()[1]
+        print(i + 1, ') ', p, ' (ads: ', ads_split, ', wiki ads: ', wiki_ads_split, ', non-ads split: ', non_ads_split, ')', sep='')
     print('Your choice [1]: ', end='')
     choice = input().strip()
     if choice == '':
