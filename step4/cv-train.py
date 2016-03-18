@@ -37,7 +37,18 @@ elif len(datasets) == 1:
 else:
     print('Choose dataset:')
     for i, p in enumerate(datasets):
-        print(i + 1, ') ', p, sep='')
+        ads_split = None
+        wiki_ads_split = None
+        non_ads_split = None
+        features = None
+        with (p / 'info.txt').open('r') as f:
+            lines = f.readlines()
+            wiki_ads_split = lines[0].strip().split()[1]
+            ads_split = lines[1].strip().split()[1]
+            non_ads_split = lines[2].strip().split()[1]
+            if "features" in lines[-1]:
+                features = lines[-1].strip().split()[0]
+        print(i + 1, ') ', p, ' (ads: ', ads_split, ', wiki ads: ', wiki_ads_split, ', non-ads split: ', non_ads_split, ', features: ', features, ')', sep='')
     print('Your choice [1]: ', end='')
     choice = input().strip()
     if choice == '':
@@ -109,7 +120,7 @@ if '-cv' in sys.argv:
 
 
 params = {'max_depth':6, 'eta':0.01, 'subsample':0.5, 'lambda':5, 'silent':1, 'objective':'binary:logistic'}
-num_rounds=800
+num_rounds=1500
 other_choice = 'test' if choice == 'train' else 'train'
 results = {}
 bst = xgb.train(params, dtrain, num_boost_round=num_rounds, 

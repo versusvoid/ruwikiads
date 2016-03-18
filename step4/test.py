@@ -52,9 +52,15 @@ else:
         model_dir = models[int(choice) - 1]
 
 bst = xgb.Booster(model_file=str(model_dir / 'xgb.model'))
+model_dataset_dir = None
 dataset_basedir = None
 with (model_dir / 'info.txt').open('r') as f:
-    dataset_basedir = f.readline().strip().split()[-1].split('/')[1]
+    model_dataset_dir = Path(f.readline().strip().split()[-1])
+    dataset_basedir = model_dataset_dir.parts[1]
+model_dataset_features = None
+with (model_dataset_dir / 'features-indexes.txt').open('r') as f:
+    model_dataset_features = f.readlines()
+    model_dataset_features.sort()
 
 
 # ------------------------- Dataset --------------------------------------------------------
@@ -71,6 +77,13 @@ def set_files_present(p):
 
         print('Incomplete dataset:', p, file=sys.stderr)
         return False
+
+    with (p / 'features-indexes.txt').open('r') as f:
+        features = f.readlines()
+        features.sort()
+        if model_dataset_features != features:
+            return False
+
     return True
 datasets = list(filter(set_files_present, datasets))
 datasets.sort(key=lambda p: p.name, reverse=True)
@@ -104,7 +117,7 @@ else:
 # --------------- Part -----------------------------------------------------------------------
 
 print('Evaluate on train (1) or test (2) set?')
-print('Your choice [1]:', end='')
+print('Your choice [1]: ', end='')
 choice = input().strip()
 if choice == '' or choice == '1':
     choice = 'train'
@@ -114,6 +127,14 @@ else:
     print('WAT', file=sys.stderr)
     exit(2)
 
+# ------------ Threshold ---------------------------------------------------------------------
+print("Input threshold [0.1]: ", end='')
+threshold = input().strip()
+if threshold == '':
+    threshold = 0.1
+else:
+    threshold = float(threshold)
+
 dtest = xgb.DMatrix('{}/{}-set.dmatrix.bin'.format(dataset_dir, choice))
 if dtest.num_row() == 0: 
     print('Empty', choice, 'set', file=sys.stderr)
@@ -122,7 +143,7 @@ if dtest.num_row() == 0:
 labels = dtest.get_label()
 
 predicted = bst.predict(dtest)
-predicted = (predicted > 0.1).astype(int)
+predicted = (predicted > threshold).astype(int)
 
 tp = sum(np.logical_and(predicted == 1, labels == 1).astype(int))
 fp = sum(np.logical_and(predicted == 1, labels == 0).astype(int))

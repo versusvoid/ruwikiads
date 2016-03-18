@@ -47,8 +47,8 @@ if [[ $? -ne 0 ]]; then
 fi
 echo glove done
 
-if [ "$1" = 'octave' ]; then
-   octave < ./GloVe/eval/octave/read_and_evaluate_octave.m 1>&2 
-else
-   python ./GloVe/eval/python/evaluate.py
-fi
+#if [ "$1" = 'octave' ]; then
+#   octave < ./GloVe/eval/octave/read_and_evaluate_octave.m 1>&2 
+#else
+#   python ./GloVe/eval/python/evaluate.py
+#fi

@@ -481,8 +481,8 @@ int main(int argc, char** argv)
     num_non_ads_samples_files = 2;
 
 
-    file_split_t wiki_ads_file_split(output_directory, wiki_ads_samples_file, ADS_LABEL, 0.4);
-    file_split_t ads_file_split(output_directory, ads_samples_file, ADS_LABEL, 0.4);
+    file_split_t wiki_ads_file_split(output_directory, wiki_ads_samples_file, ADS_LABEL, 1.0);
+    file_split_t ads_file_split(output_directory, ads_samples_file, ADS_LABEL, 0.0);
 
 
     std::wcout << "Counting non ads samples" << std::endl;

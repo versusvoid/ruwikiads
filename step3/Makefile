@@ -21,7 +21,7 @@ a.out: main.cpp features.hpp Makefile
 		-lgomp -lrt -lm -ldl \
 
 run: a.out
-	sh -c 'time ./a.out'
+	sh -c 'time ./a.out ${features}'
 
 clean:
 	rm a.out

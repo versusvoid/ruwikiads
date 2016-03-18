@@ -171,12 +171,16 @@ unique_urls = set()
 urls = []
 with open(sys.argv[1], 'r') as f:
     for line in f:
+        line = line.strip().split(',', 1)[0]
+        if not line.startswith('https://'):
+            line = 'http://' + line
         url = urllib.parse.urlparse(line.strip().split(',', 1)[0])
         assert url.scheme.startswith('http') 
         str_url = '{}://{}/'.format(url.scheme, url.netloc)
         if str_url not in unique_urls:
             unique_urls.add(str_url)
             urls.append(str_url)
+#urls = urls[:10]
 
 NUM_THREADS=8
 urls_per_thread = len(urls) // NUM_THREADS
@@ -228,7 +232,7 @@ def communicate_with_mystem(text, output_file):
                 print(l, end='', file=output_file)
 
 
-with open('{}/yaca-ads.index.txt'.format(directory), 'w') as of:
+with open('data/output/yaca-ads.index.txt', 'w') as of:
     for i in range(NUM_THREADS):
         with open('{}/yaca-ads-{}.txt'.format(directory, i), 'r') as f:
             skip = 1

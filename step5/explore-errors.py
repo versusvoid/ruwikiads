@@ -64,7 +64,7 @@ else:
     if choice == '':
         model_dir = models[0]
     else:
-        model_dir = dtatsets[int(choice) - 1]
+        model_dir = models[int(choice) - 1]
 
 dataset_dir = get_model_dataset_dir(model_dir)
 

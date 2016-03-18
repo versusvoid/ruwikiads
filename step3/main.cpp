@@ -253,7 +253,8 @@ features_dict extract_features_from_file(file_split_t* file_split,
                 extract_features_from_sequence(sample_features, word_sequence);
 
                 bool test_sample = file_split->split.test(sample_number);
-                if (not test_sample) {
+
+                if (update_temp_features_indexes and not test_sample) {
                     for (auto& kv : sample_features) {
                         record_feature(features_counts, kv.first);
                     }
@@ -339,13 +340,13 @@ inline void convert_features(file_split_t& file_split,
     convert_features(file_split.train_part, features_transform);
 }
 
-features_indexes_t compute_features_indexes(std::vector<file_split_t>& non_ads_splits,
-                                            file_split_t& ads_split) {
-
-    features_indexes_t temp_features_indexes;
-    std::vector<std::future<features_dict>> per_file_features_counts;
+features_dict compute_features_counts(std::vector<file_split_t>& non_ads_splits,
+                                      file_split_t& ads_split,
+                                      features_indexes_t& temp_features_indexes,
+                                      bool update_features) {
 
     std::wcout << "Running first non ads half" << std::endl;
+    std::vector<std::future<features_dict>> per_file_features_counts;
 
     for (auto i = 0U; i < std::min(4UL, non_ads_splits.size()); ++i) {
 
@@ -353,7 +354,7 @@ features_indexes_t compute_features_indexes(std::vector<file_split_t>& non_ads_s
                     std::async(std::launch::async, extract_features_from_file,
                                &non_ads_splits.at(i),
                                &temp_features_indexes,
-                               true
+                               update_features
                                )
                     );
     }
@@ -361,7 +362,7 @@ features_indexes_t compute_features_indexes(std::vector<file_split_t>& non_ads_s
 
     features_dict features_counts = extract_features_from_file(&ads_split,
                                                                &temp_features_indexes,
-                                                               true);
+                                                               update_features);
 
 
     for (auto& counts_future : per_file_features_counts) {
@@ -378,7 +379,7 @@ features_indexes_t compute_features_indexes(std::vector<file_split_t>& non_ads_s
                         std::async(std::launch::async, extract_features_from_file,
                                    &non_ads_splits[i],
                                    &temp_features_indexes,
-                                   true
+                                   update_features
                                    )
                         );
         }
@@ -389,13 +390,24 @@ features_indexes_t compute_features_indexes(std::vector<file_split_t>& non_ads_s
         }
     }
 
+    return features_counts;
+}
+
+features_indexes_t compute_features_indexes(std::vector<file_split_t>& non_ads_splits,
+                                            file_split_t& ads_split) {
+
+    features_indexes_t temp_features_indexes;
+
+    auto features_counts = compute_features_counts(non_ads_splits, ads_split,
+                                                   temp_features_indexes, true);
+
     features_indexes_t features_indexes;
     std::vector<int32_t> features_transform(temp_features_indexes.size(), -1);
     for (auto& kv : features_counts) {
-        //if (kv.second > 1000) {
+        if (kv.second > 1000) {
             features_transform[temp_features_indexes.at(kv.first)] = features_indexes.size();
             features_indexes.insert(std::make_pair(kv.first, features_indexes.size()));
-        //}
+        }
     }
 
     std::wcout << "Converting termporal features' indices to final" << std::endl;
@@ -533,6 +545,27 @@ void output_features_index(const std::string& filename,
     f.close();
 }
 
+features_indexes_t load_features_from_file(const std::string& filename)
+{
+
+    assert(boost::filesystem::is_regular_file(filename));
+
+    features_indexes_t result;
+
+    std::wifstream f(filename);
+    std::wstring line;
+    std::getline(f, line);
+    while (line.length() > 0) {
+        auto i = line.find(':');
+        assert(i != line.npos and i < line.length() - 1);
+        result[line.substr(0, i)] = std::stoul(line.substr(i + 1));
+        std::getline(f, line);
+    }
+    f.close();
+
+    return result;
+}
+
 int main(int argc, char** argv)
 {
     std::string output_directory = make_output_directory();
@@ -571,15 +604,41 @@ int main(int argc, char** argv)
     }
     std::wcout << "Non ads samples counted" << std::endl;
 
-    std::wcout << "Computing feature indices" << std::endl;
+    features_indexes_t features_indexes;
+    if (argc < 2) {
 
-    auto features_indexes = compute_features_indexes(non_ads_file_splits,
-                                                     ads_file_split);
+        std::wcout << "Computing feature indices" << std::endl;
+
+        features_indexes = compute_features_indexes(non_ads_file_splits,
+                                                         ads_file_split);
+
+
+    } else {
+
+        std::wcout << "Loading features from " << argv[1] << std::endl;
+
+        features_indexes = load_features_from_file(argv[1]);
+
+        std::wcout << "Features loaded" << std::endl;
+
+        auto _ignored = compute_features_counts(non_ads_file_splits, ads_file_split,
+                                                features_indexes, false);
+
+    }
+
 
     std::wcout << features_indexes.size() << " features" << std::endl;
+
+    {
+        std::ofstream info(output_directory + "/info.txt", std::ios_base::app);
+        info << features_indexes.size() << " features" << std::endl;
+        info.close();
+    }
+
     std::wcout << "Feature indexes computed. Dumping to file." << std::endl;
 
     output_features_index(output_directory + "/features-indexes.txt", features_indexes);
+
 
     auto _ignored = extract_features_from_file(&wiki_ads_file_split,
                                                &features_indexes,
