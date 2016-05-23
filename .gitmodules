@@ -1,0 +1,3 @@
+[submodule "step2/RuLanAdCor"]
+	path = step2/RuLanAdCor
+	url = https://github.com/versusvoid/RuLanAdCor
